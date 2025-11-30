@@ -45,26 +45,26 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
       <div className="max-w-md w-full space-y-8">
         {/* Logo & Title */}
         <div className="text-center">
-          <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-600 rounded-lg">
-              <ShieldCheck className="h-8 w-8 text-white" />
+          <div className="flex justify-center mb-6">
+            <div className="p-4 bg-blue-600 rounded-2xl shadow-lg shadow-blue-600/50">
+              <ShieldCheck className="h-10 w-10 text-white" />
             </div>
           </div>
-          <h2 className="text-3xl font-bold text-gray-100">Create Account</h2>
-          <p className="mt-2 text-gray-400">
+          <h2 className="text-4xl font-bold text-white mb-3">Create Account</h2>
+          <p className="text-lg text-slate-400">
             Get started with your security system
           </p>
         </div>
 
         {/* Register Form */}
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-8">
+        <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-2xl p-8 shadow-2xl">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-lg text-sm">
+              <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-5 py-4 rounded-xl text-sm font-medium">
                 {error}
               </div>
             )}
@@ -105,16 +105,16 @@ export default function RegisterPage() {
               required
             />
 
-            <Button type="submit" className="w-full" isLoading={loading}>
+            <Button type="submit" className="w-full py-3" isLoading={loading}>
               Create Account
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-gray-400">
+          <div className="mt-8 text-center text-sm text-slate-400">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="text-blue-400 hover:text-blue-300 font-medium"
+              className="text-blue-400 hover:text-blue-300 font-semibold transition-colors"
             >
               Sign in
             </Link>

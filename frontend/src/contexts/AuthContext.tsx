@@ -2,6 +2,7 @@
 
 import {
   signIn as firebaseSignIn,
+  signInWithGoogle as firebaseSignInWithGoogle,
   signOut as firebaseSignOut,
   signUp as firebaseSignUp,
 } from "@/lib/firebase/auth";
@@ -21,6 +22,7 @@ interface AuthContextType {
     password: string,
     displayName?: string
   ) => Promise<{ user: User | null; error: string | null }>;
+  signInWithGoogle: () => Promise<{ user: User | null; error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -60,8 +62,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const signInWithGoogle = async () => {
+    const result = await firebaseSignInWithGoogle();
+    if (result.user) setUser(result.user);
+    return result;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{ user, loading, signIn, signUp, signInWithGoogle, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

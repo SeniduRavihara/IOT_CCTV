@@ -17,11 +17,12 @@ import { usePathname } from "next/navigation";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Alerts", href: "/alerts", icon: Bell },
-  { name: "Known Persons", href: "/known-persons", icon: Users },
-  { name: "Cameras", href: "/cameras", icon: Camera },
-  { name: "History", href: "/history", icon: History },
-  { name: "Settings", href: "/settings", icon: Settings },
+  { name: "Alerts", href: "/dashboard/alerts", icon: Bell },
+  { name: "Known Persons", href: "/dashboard/known-persons", icon: Users },
+  { name: "Cameras", href: "/dashboard/cameras", icon: Camera },
+  { name: "Live Feed", href: "/dashboard/live", icon: Camera },
+  { name: "History", href: "/dashboard/history", icon: History },
+  { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 export function Sidebar() {
@@ -63,7 +64,7 @@ export function Sidebar() {
       {/* User Section */}
       <div className="border-t border-gray-700 p-4">
         <div className="flex items-center gap-3 mb-3">
-          <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
+          <div className="h-10 w-10 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-semibold">
             {user?.email?.[0].toUpperCase()}
           </div>
           <div className="flex-1 min-w-0">
