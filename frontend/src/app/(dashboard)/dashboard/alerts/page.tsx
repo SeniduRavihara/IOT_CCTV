@@ -191,7 +191,9 @@ export default function AlertsPage() {
                   <p className="text-sm text-slate-400">
                     {alert.cameraName || "Camera"} •{" "}
                     {formatDistanceToNow(
-                      alert.timestamp?.toDate() || new Date(),
+                      alert.timestamp instanceof Date
+                        ? alert.timestamp
+                        : alert.timestamp?.toDate() || new Date(),
                       { addSuffix: true }
                     )}
                   </p>
@@ -266,7 +268,9 @@ export default function AlertsPage() {
                     </td>
                     <td className="px-6 py-4 text-slate-400">
                       {formatDistanceToNow(
-                        alert.timestamp?.toDate() || new Date(),
+                        alert.timestamp instanceof Date
+                          ? alert.timestamp
+                          : alert.timestamp?.toDate() || new Date(),
                         { addSuffix: true }
                       )}
                     </td>

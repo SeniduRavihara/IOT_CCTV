@@ -71,7 +71,7 @@ export default function HistoryPage() {
       const known = alertsData.filter((a) => a.status === "known").length;
       const unknown = alertsData.filter((a) => a.status === "unknown").length;
       const today = alertsData.filter((a) => {
-        const alertDate = a.timestamp?.toDate();
+        const alertDate = a.timestamp instanceof Date ? a.timestamp : a.timestamp?.toDate();
         const now = new Date();
         return alertDate?.toDateString() === now.toDateString();
       }).length;
@@ -100,7 +100,12 @@ export default function HistoryPage() {
     }
 
     alerts.forEach((alert) => {
-      const date = format(alert.timestamp?.toDate() || new Date(), "MMM dd");
+      const date = format(
+        alert.timestamp instanceof Date
+          ? alert.timestamp
+          : alert.timestamp?.toDate() || new Date(),
+        "MMM dd"
+      );
       if (days[date]) {
         if (alert.status === "known") {
           days[date].known++;
@@ -123,7 +128,8 @@ export default function HistoryPage() {
     for (let i = 0; i < 24; i++) hours[i] = 0;
 
     alerts.forEach((alert) => {
-      const hour = alert.timestamp?.toDate().getHours();
+      const alertDate = alert.timestamp instanceof Date ? alert.timestamp : alert.timestamp?.toDate();
+      const hour = alertDate?.getHours();
       if (hour !== undefined) hours[hour]++;
     });
 
@@ -282,7 +288,7 @@ export default function HistoryPage() {
                 cy="50%"
                 labelLine={false}
                 label={({ name, percent }) =>
-                  `${name}: ${(percent * 100).toFixed(0)}%`
+                  `${name}: ${((percent || 0) * 100).toFixed(0)}%`
                 }
                 outerRadius={100}
                 fill="#8884d8"

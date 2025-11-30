@@ -140,7 +140,9 @@ export default function KnownPersonsPage() {
                   <span>
                     Added{" "}
                     {formatDistanceToNow(
-                      person.createdAt?.toDate() || new Date(),
+                      person.createdAt instanceof Date
+                        ? person.createdAt
+                        : person.createdAt?.toDate() || new Date(),
                       { addSuffix: true }
                     )}
                   </span>
