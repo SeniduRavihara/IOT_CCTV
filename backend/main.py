@@ -22,7 +22,7 @@ CORS(app)
 # Initialize Firebase Admin
 # TODO: User needs to provide serviceAccountKey.json
 cred_path = os.getenv("FIREBASE_CREDENTIALS", "serviceAccountKey.json")
-storage_bucket = os.getenv("FIREBASE_STORAGE_BUCKET", "iot-cctv-app.appspot.com") # Default placeholder
+storage_bucket = os.getenv("FIREBASE_STORAGE_BUCKET", "iot-cctv-ede95.firebasestorage.app") # Default placeholder
 
 if os.path.exists(cred_path):
     cred = credentials.Certificate(cred_path)
@@ -86,7 +86,7 @@ def process_frame(img, source="manual"):
             # Optimization: Pass numpy array directly, use Facenet (faster), and opencv detector (fastest)
             dfs = DeepFace.find(img_path=img, 
                               db_path=FACES_DB_PATH, 
-                              model_name="Facenet512",
+                              model_name="VGG-Face",
                               detector_backend="opencv",
                               enforce_detection=False,
                               silent=True)
@@ -97,8 +97,16 @@ def process_frame(img, source="manual"):
                     identity_path = match['identity']
                     detected_name = os.path.basename(os.path.dirname(identity_path))
                     distance = match['distance']
-                    confidence = max(0, (1 - distance) * 100)
-                    print(f"DEBUG: Match found: {detected_name}, Distance: {distance}")
+                    
+                    # STRICTER THRESHOLD for VGG-Face (Default is ~0.40, we want 0.30)
+                    if distance > 0.30:
+                        print(f"DEBUG: Match found but distance {distance} > 0.30 (Too weak). Treating as Unknown.")
+                        detected_name = "Unknown"
+                        confidence = 0.0
+                    else:
+                        detected_name = os.path.basename(os.path.dirname(identity_path))
+                        confidence = max(0, (1 - distance) * 100)
+                        print(f"DEBUG: Match found: {detected_name}, Distance: {distance}")
                 else:
                     print("DEBUG: DeepFace returned empty dataframe (No match found)")
             else:
@@ -186,11 +194,14 @@ def register_face():
     # Delete representations pkl to force re-indexing
     pkl_path_vgg = os.path.join(FACES_DB_PATH, "representations_vgg_face.pkl")
     pkl_path_facenet = os.path.join(FACES_DB_PATH, "representations_facenet.pkl")
+    pkl_path_facenet512 = os.path.join(FACES_DB_PATH, "representations_facenet512.pkl")
     
     if os.path.exists(pkl_path_vgg):
         os.remove(pkl_path_vgg)
     if os.path.exists(pkl_path_facenet):
         os.remove(pkl_path_facenet)
+    if os.path.exists(pkl_path_facenet512):
+        os.remove(pkl_path_facenet512)
         
     return jsonify({"status": "success", "message": f"Registered {name}"})
 
@@ -205,7 +216,7 @@ def detect_person():
     npimg = np.frombuffer(file.read(), np.uint8)
     img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
     
-    result = process_frame(img, source="manual")
+    result = process_frame(img, source="stream")
     return jsonify(result)
 
 if __name__ == '__main__':
