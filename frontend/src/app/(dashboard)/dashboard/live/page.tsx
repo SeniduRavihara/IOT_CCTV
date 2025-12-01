@@ -12,7 +12,9 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
   const [isOnline, setIsOnline] = useState(true);
   const [imgError, setImgError] = useState(false);
 
-  const streamUrl = `http://${camera.ipAddress}/stream`;
+  // For the simulator demo, we force it to localhost:5000
+  // In a real deployment, this would be `http://${camera.ipAddress}/stream`
+  const streamUrl = "http://localhost:5000/stream";
 
   return (
     <Card className="overflow-hidden">
