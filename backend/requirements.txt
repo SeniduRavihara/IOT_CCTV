@@ -1,0 +1,8 @@
+flask
+flask-cors
+firebase-admin
+deepface
+opencv-python
+python-dotenv
+numpy
+tf-keras

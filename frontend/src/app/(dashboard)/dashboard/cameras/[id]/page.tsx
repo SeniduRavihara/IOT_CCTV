@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/Input";
 import { db } from "@/lib/firebase/config";
 import { Camera } from "@/lib/types";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { ArrowLeft, Save, Video, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Save, Video, Wifi, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -20,6 +20,9 @@ export default function CameraDetailPage() {
   const [camera, setCamera] = useState<Camera | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isOnline, setIsOnline] = useState(false); // Local online state
+  const [imgError, setImgError] = useState(false);
+
   const [formData, setFormData] = useState({
     name: "",
     location: "",
@@ -42,6 +45,9 @@ export default function CameraDetailPage() {
       if (docSnap.exists()) {
         const cameraData = { id: docSnap.id, ...docSnap.data() } as Camera;
         setCamera(cameraData);
+        // Initialize local online state from DB, but it will update on stream load
+        setIsOnline(cameraData.status === "online");
+        
         setFormData({
           name: cameraData.name,
           location: cameraData.location,
@@ -97,6 +103,8 @@ export default function CameraDetailPage() {
 
   if (!camera) return null;
 
+  const streamUrl = `http://${formData.ipAddress || camera.ipAddress}/stream`;
+
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
@@ -110,8 +118,8 @@ export default function CameraDetailPage() {
           <h1 className="text-3xl font-bold text-white">Camera Settings</h1>
           <p className="text-slate-400 mt-1">Configure {camera.name}</p>
         </div>
-        <Badge variant={camera.status === "online" ? "success" : "danger"}>
-          {camera.status === "online" ? (
+        <Badge variant={isOnline ? "success" : "danger"}>
+          {isOnline ? (
             <>
               <Wifi className="h-3 w-3 mr-1" /> Online
             </>
@@ -128,12 +136,12 @@ export default function CameraDetailPage() {
         <div className="flex items-center gap-4 mb-6">
           <div
             className={`p-4 rounded-lg ${
-              camera.status === "online" ? "bg-green-500/20" : "bg-red-500/20"
+              isOnline ? "bg-green-500/20" : "bg-red-500/20"
             }`}
           >
             <Video
               className={`h-8 w-8 ${
-                camera.status === "online" ? "text-green-400" : "text-red-400"
+                isOnline ? "text-green-400" : "text-red-400"
               }`}
             />
           </div>
@@ -142,7 +150,51 @@ export default function CameraDetailPage() {
             <p className="text-slate-400">{camera.location}</p>
           </div>
         </div>
+      </Card>
 
+      {/* Live Stream */}
+      <Card className="p-6 overflow-hidden">
+        <h3 className="text-lg font-semibold text-white mb-4">Live Feed</h3>
+        <div className="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center border border-slate-800">
+          {!imgError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={streamUrl}
+              alt={`Stream from ${camera.name}`}
+              className="w-full h-full object-contain"
+              onError={(e) => {
+                setImgError(true);
+                setIsOnline(false);
+              }}
+              onLoad={() => {
+                setImgError(false);
+                setIsOnline(true);
+              }}
+            />
+          ) : (
+            <div className="text-center">
+              <WifiOff className="h-12 w-12 text-slate-600 mx-auto mb-2" />
+              <p className="text-slate-400">Camera is offline</p>
+              <button
+                onClick={() => setImgError(false)}
+                className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline"
+              >
+                Retry Connection
+              </button>
+            </div>
+          )}
+          
+          {/* Fallback for load error (handled via CSS class in real app, simplified here) */}
+          <div className="hidden stream-error-msg absolute inset-0 flex flex-col items-center justify-center bg-slate-900">
+             <AlertTriangle className="h-12 w-12 text-yellow-500 mb-2" />
+             <p className="text-slate-400">Stream unavailable</p>
+             <p className="text-xs text-slate-600 mt-1">Check IP: {camera.ipAddress}</p>
+          </div>
+        </div>
+      </Card>
+
+      {/* Basic Settings */}
+      <Card className="p-6">
         <div className="space-y-6">
           <Input
             label="Camera Name"
@@ -163,9 +215,11 @@ export default function CameraDetailPage() {
           <Input
             label="IP Address"
             value={formData.ipAddress}
-            onChange={(e) =>
-              setFormData({ ...formData, ipAddress: e.target.value })
-            }
+            onChange={(e) => {
+              setFormData({ ...formData, ipAddress: e.target.value });
+              // Reset error to try loading new IP
+              setImgError(false);
+            }}
             placeholder="192.168.1.100"
           />
         </div>
@@ -278,3 +332,4 @@ export default function CameraDetailPage() {
     </div>
   );
 }
+

@@ -5,8 +5,95 @@ import { Card } from "@/components/ui/Card";
 import { db } from "@/lib/firebase/config";
 import { Camera } from "@/lib/types";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { Play, Video, Wifi, WifiOff } from "lucide-react";
+import { Video, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
+
+function LiveCameraCard({ camera }: { camera: Camera }) {
+  const [isOnline, setIsOnline] = useState(true);
+  const [imgError, setImgError] = useState(false);
+
+  const streamUrl = `http://${camera.ipAddress}/stream`;
+
+  return (
+    <Card className="overflow-hidden">
+      {/* Camera Header */}
+      <div className="p-4 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div
+            className={`p-2 rounded-lg ${
+              isOnline ? "bg-green-500/20" : "bg-red-500/20"
+            }`}
+          >
+            {isOnline ? (
+              <Wifi className="h-5 w-5 text-green-400" />
+            ) : (
+              <WifiOff className="h-5 w-5 text-red-400" />
+            )}
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">{camera.name}</h3>
+            <p className="text-xs text-slate-400">{camera.location}</p>
+          </div>
+        </div>
+        <Badge variant={isOnline ? "success" : "danger"}>
+          {isOnline ? "Online" : "Offline"}
+        </Badge>
+      </div>
+
+      {/* Camera Feed */}
+      <div className="relative aspect-video bg-slate-900">
+        {!imgError ? (
+          <img
+            src={streamUrl}
+            alt={`Live feed from ${camera.name}`}
+            className="w-full h-full object-contain"
+            onError={() => {
+              setImgError(true);
+              setIsOnline(false);
+            }}
+            onLoad={() => {
+              setIsOnline(true);
+              setImgError(false);
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <WifiOff className="h-16 w-16 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400">Camera offline</p>
+              <button
+                onClick={() => setImgError(false)}
+                className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline"
+              >
+                Retry Connection
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Recording Indicator */}
+        {isOnline && (
+          <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-red-500 rounded-full">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+            <span className="text-xs font-semibold text-white">LIVE</span>
+          </div>
+        )}
+      </div>
+
+      {/* Camera Controls */}
+      <div className="p-4 bg-slate-900/50 border-t border-slate-800">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-400">
+            Detection: {camera.settings?.detectionEnabled ? "Active" : "Paused"}
+          </span>
+          <span className="text-slate-400">
+            Sensitivity: {camera.settings?.motionSensitivity || 50}%
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 export default function LivePage() {
   const [cameras, setCameras] = useState<Camera[]>([]);
@@ -63,82 +150,7 @@ export default function LivePage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {cameras.map((camera) => (
-            <Card key={camera.id} className="overflow-hidden">
-              {/* Camera Header */}
-              <div className="p-4 bg-slate-900/50 border-b border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`p-2 rounded-lg ${
-                      camera.status === "online"
-                        ? "bg-green-500/20"
-                        : "bg-red-500/20"
-                    }`}
-                  >
-                    {camera.status === "online" ? (
-                      <Wifi className="h-5 w-5 text-green-400" />
-                    ) : (
-                      <WifiOff className="h-5 w-5 text-red-400" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-white">{camera.name}</h3>
-                    <p className="text-xs text-slate-400">{camera.location}</p>
-                  </div>
-                </div>
-                <Badge
-                  variant={camera.status === "online" ? "success" : "danger"}
-                >
-                  {camera.status}
-                </Badge>
-              </div>
-
-              {/* Camera Feed */}
-              <div className="relative aspect-video bg-slate-900">
-                {camera.status === "online" ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <Play className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-                      <p className="text-slate-400">
-                        Live feed will appear here
-                      </p>
-                      <p className="text-xs text-slate-500 mt-2">
-                        Stream from: {camera.ipAddress}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <WifiOff className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-                      <p className="text-slate-400">Camera offline</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Recording Indicator */}
-                {camera.status === "online" && (
-                  <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-red-500 rounded-full">
-                    <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                    <span className="text-xs font-semibold text-white">
-                      LIVE
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Camera Controls */}
-              <div className="p-4 bg-slate-900/50 border-t border-slate-800">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-400">
-                    Detection:{" "}
-                    {camera.settings?.detectionEnabled ? "Active" : "Paused"}
-                  </span>
-                  <span className="text-slate-400">
-                    Sensitivity: {camera.settings?.motionSensitivity || 50}%
-                  </span>
-                </div>
-              </div>
-            </Card>
+            <LiveCameraCard key={camera.id} camera={camera} />
           ))}
         </div>
       )}
@@ -163,3 +175,4 @@ export default function LivePage() {
     </div>
   );
 }
+

@@ -70,6 +70,29 @@ export default function AddPersonPage() {
         lastSeen: null,
       });
 
+      // Register with Python AI Backend
+      try {
+        await Promise.all(
+          images.map(async (image) => {
+            const formData = new FormData();
+            formData.append("name", name);
+            formData.append("image", image);
+
+            const res = await fetch("http://localhost:5001/register", {
+              method: "POST",
+              body: formData,
+            });
+            
+            if (!res.ok) {
+                console.error(`Failed to register image with AI backend: ${res.statusText}`);
+            }
+          })
+        );
+      } catch (error) {
+        console.error("Error registering with AI backend:", error);
+        alert("Saved to database, but AI registration failed. Ensure backend is running.");
+      }
+
       router.push("/dashboard/known-persons");
     } catch (error) {
       console.error("Error adding person:", error);

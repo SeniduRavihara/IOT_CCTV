@@ -6,14 +6,16 @@ import { db } from "@/lib/firebase/config";
 import { Alert } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import {
-  collection,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
+    collection,
+    getDocs,
+    limit,
+    onSnapshot,
+    orderBy,
+    query,
+    where,
+    writeBatch,
 } from "firebase/firestore";
-import { Bell, Download, Grid3x3, List } from "lucide-react";
+import { Bell, Download, Grid3x3, List, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -25,6 +27,7 @@ export default function AlertsPage() {
   const [filter, setFilter] = useState<"all" | "unknown" | "known">("all");
 
   useEffect(() => {
+    // ... (existing useEffect code)
     let q = query(
       collection(db, "alerts"),
       orderBy("timestamp", "desc"),
@@ -53,6 +56,24 @@ export default function AlertsPage() {
     return () => unsubscribe();
   }, [filter]);
 
+  const handleClearAlerts = async () => {
+    if (!confirm("Are you sure you want to delete ALL alerts? This cannot be undone.")) return;
+    
+    try {
+      const q = query(collection(db, "alerts"));
+      const snapshot = await getDocs(q);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Error clearing alerts:", error);
+      alert("Failed to clear alerts");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -71,10 +92,21 @@ export default function AlertsPage() {
             Monitor and manage detection alerts
           </p>
         </div>
-        <Button variant="primary">
-          <Download className="h-4 w-4 mr-2" />
-          Export
-        </Button>
+        <div className="flex gap-2">
+            <Button 
+                variant="outline" 
+                onClick={handleClearAlerts}
+                disabled={alerts.length === 0}
+                className="text-red-400 border-red-900/50 hover:bg-red-900/20 hover:text-red-300"
+            >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear All
+            </Button>
+            <Button variant="primary">
+            <Download className="h-4 w-4 mr-2" />
+            Export
+            </Button>
+        </div>
       </div>
 
       {/* Filters */}

@@ -23,6 +23,7 @@
     "react-hook-form": "^7.67.0",
     "react-hot-toast": "^2.6.0",
     "react-redux": "^9.2.0",
+    "react-webcam": "^7.2.0",
     "recharts": "^3.5.1",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.1.13"

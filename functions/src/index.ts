@@ -1,32 +1,74 @@
-/**
- * Import function triggers from their respective submodules:
- *
- * import {onCall} from "firebase-functions/v2/https";
- * import {onDocumentWritten} from "firebase-functions/v2/firestore";
- *
- * See a full list of supported triggers at https://firebase.google.com/docs/functions
- */
-
-import {setGlobalOptions} from "firebase-functions";
-import {onRequest} from "firebase-functions/https";
+import * as admin from "firebase-admin";
+import { setGlobalOptions } from "firebase-functions";
 import * as logger from "firebase-functions/logger";
+import { onRequest } from "firebase-functions/v2/https";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { v4 as uuidv4 } from "uuid";
+const Busboy = require("busboy");
 
-// Start writing functions
-// https://firebase.google.com/docs/functions/typescript
+admin.initializeApp();
 
-// For cost control, you can set the maximum number of containers that can be
-// running at the same time. This helps mitigate the impact of unexpected
-// traffic spikes by instead downgrading performance. This limit is a
-// per-function limit. You can override the limit for each function using the
-// `maxInstances` option in the function's options, e.g.
-// `onRequest({ maxInstances: 5 }, (req, res) => { ... })`.
-// NOTE: setGlobalOptions does not apply to functions using the v1 API. V1
-// functions should each use functions.runWith({ maxInstances: 10 }) instead.
-// In the v1 API, each function can only serve one request per container, so
-// this will be the maximum concurrent request count.
 setGlobalOptions({ maxInstances: 10 });
 
-// export const helloWorld = onRequest((request, response) => {
-//   logger.info("Hello logs!", {structuredData: true});
-//   response.send("Hello from Firebase!");
-// });
+export const processImage = onRequest({ cors: true }, (req, res) => {
+  if (req.method !== "POST") {
+    res.status(405).send("Method Not Allowed");
+    return;
+  }
+
+  const busboy = Busboy({ headers: req.headers });
+  const tmpdir = os.tmpdir();
+  const uploads: { [key: string]: string } = {};
+  const fileWrites: Promise<void>[] = [];
+
+  busboy.on("file", (fieldname: string, file: any, info: any) => {
+    const { filename } = info;
+    const filepath = path.join(tmpdir, filename);
+    uploads[fieldname] = filepath;
+
+    const writeStream = fs.createWriteStream(filepath);
+    file.pipe(writeStream);
+
+    const promise = new Promise<void>((resolve, reject) => {
+      file.on("end", () => {
+        writeStream.end();
+      });
+      writeStream.on("finish", resolve);
+      writeStream.on("error", reject);
+    });
+    fileWrites.push(promise);
+  });
+
+  busboy.on("finish", async () => {
+    await Promise.all(fileWrites);
+
+    try {
+      for (const file in uploads) {
+        const filepath = uploads[file];
+        const destination = `captures/${uuidv4()}.jpg`;
+        
+        await admin.storage().bucket().upload(filepath, {
+          destination,
+          metadata: {
+            contentType: "image/jpeg",
+          },
+        });
+        
+        logger.info(`Uploaded ${filepath} to ${destination}`);
+        fs.unlinkSync(filepath); // Clean up temp file
+      }
+      
+      // TODO: Trigger Face Recognition here
+      logger.info("Face detection placeholder triggered.");
+
+      res.status(200).send({ message: "Image processed successfully" });
+    } catch (error) {
+      logger.error("Error processing image", error);
+      res.status(500).send({ error: "Internal Server Error" });
+    }
+  });
+
+  busboy.end(req.rawBody);
+});

@@ -1,10 +1,19 @@
 "use client";
 
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
-import { AlertTriangle, Camera, Users } from "lucide-react";
+import { db } from "@/lib/firebase/config";
+import { formatDistanceToNow } from "date-fns";
+import { collection, getDocs, limit, onSnapshot, orderBy, query, writeBatch } from "firebase/firestore";
+import { AlertTriangle, Camera, Trash2, Users } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
+  const [recentAlerts, setRecentAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Stats state (could be real too, but let's fix alerts first)
   const stats = [
     {
       name: "Total Alerts Today",
@@ -36,36 +45,42 @@ export default function DashboardPage() {
     },
   ];
 
-  const recentAlerts = [
-    {
-      id: 1,
-      person: "Unknown Person",
-      time: "2 minutes ago",
-      status: "unknown",
-      camera: "Front Door",
-    },
-    {
-      id: 2,
-      person: "John Doe",
-      time: "15 minutes ago",
-      status: "known",
-      camera: "Backyard",
-    },
-    {
-      id: 3,
-      person: "Unknown Person",
-      time: "1 hour ago",
-      status: "unknown",
-      camera: "Garage",
-    },
-    {
-      id: 4,
-      person: "Jane Smith",
-      time: "2 hours ago",
-      status: "known",
-      camera: "Front Door",
-    },
-  ];
+  useEffect(() => {
+    const q = query(
+      collection(db, "alerts"),
+      orderBy("timestamp", "desc"),
+      limit(5)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const alertsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setRecentAlerts(alertsData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleClearAlerts = async () => {
+    if (!confirm("Are you sure you want to delete ALL alerts? This cannot be undone.")) return;
+    
+    try {
+      const q = query(collection(db, "alerts"));
+      const snapshot = await getDocs(q);
+      
+      const batch = writeBatch(db);
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    } catch (error) {
+      console.error("Error clearing alerts:", error);
+      alert("Failed to clear alerts");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -101,37 +116,55 @@ export default function DashboardPage() {
 
       {/* Recent Alerts */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Recent Alerts</CardTitle>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleClearAlerts}
+            disabled={recentAlerts.length === 0}
+            className="text-red-400 hover:text-red-300 hover:bg-red-900/20 border-red-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Clear All Alerts
+          </Button>
         </CardHeader>
         <CardContent>
+          {/* ... */}
           <div className="space-y-4">
-            {recentAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-lg bg-gray-600 flex items-center justify-center">
-                    <AlertTriangle className="h-6 w-6 text-gray-400" />
+            {recentAlerts.length === 0 ? (
+                <p className="text-gray-400 text-center py-4">No recent alerts</p>
+            ) : (
+                recentAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-lg bg-gray-600 flex items-center justify-center">
+                        <AlertTriangle className="h-6 w-6 text-gray-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-100">
+                            {alert.details?.name || "Unknown Person"}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          {alert.cameraName || "Camera"} • {alert.timestamp ? formatDistanceToNow(alert.timestamp.toDate(), { addSuffix: true }) : 'Just now'}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={alert.details?.name && alert.details.name !== "Unknown" ? "success" : "danger"}
+                    >
+                      {alert.details?.name && alert.details.name !== "Unknown" ? "Known" : "Unknown"}
+                    </Badge>
                   </div>
-                  <div>
-                    <p className="font-medium text-gray-100">{alert.person}</p>
-                    <p className="text-sm text-gray-400">
-                      {alert.camera} • {alert.time}
-                    </p>
-                  </div>
-                </div>
-                <Badge
-                  variant={alert.status === "unknown" ? "danger" : "success"}
-                >
-                  {alert.status === "unknown" ? "Unknown" : "Known"}
-                </Badge>
-              </div>
-            ))}
+                ))
+            )}
           </div>
         </CardContent>
       </Card>
+
 
       {/* System Status */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -170,8 +203,12 @@ export default function DashboardPage() {
               <button className="p-4 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-medium transition-colors">
                 Add Person
               </button>
-              <button className="p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors">
-                View Alerts
+              <button 
+                onClick={handleClearAlerts}
+                className="p-4 bg-red-900/20 border border-red-900/50 hover:bg-red-900/40 rounded-lg text-red-400 font-medium transition-colors flex flex-col items-center justify-center gap-2"
+              >
+                <Trash2 className="h-5 w-5" />
+                Clear Alerts
               </button>
               <button className="p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors">
                 Add Camera
