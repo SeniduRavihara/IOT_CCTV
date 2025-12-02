@@ -47,8 +47,17 @@ if not os.path.exists(FACES_DB_PATH):
     os.makedirs(FACES_DB_PATH)
 
 # Global state for alert cooldowns
+# Global state for alert cooldowns
 last_alert_times = {}
 ALERT_COOLDOWN = 60  # Seconds before alerting for the same person again
+ALERT_KNOWN_PERSONS = False # Default: Don't alert for known people
+
+@app.route('/settings/alert-known', methods=['POST'])
+def toggle_alert_known():
+    global ALERT_KNOWN_PERSONS
+    data = request.json
+    ALERT_KNOWN_PERSONS = data.get('enabled', False)
+    return jsonify({"status": "success", "enabled": ALERT_KNOWN_PERSONS})
 
 def upload_image_to_storage(img):
     """Uploads numpy image to Firebase Storage and returns public URL."""
@@ -130,20 +139,27 @@ def process_frame(img, source="manual"):
             # Update last alert time
             last_alert_times[detected_name] = time.time()
 
-        # --- Alert Logic (README Alignment) ---
-        # Only alert if the person is UNKNOWN
-        if detected_name != "Unknown":
-            print(f"Known person detected: {detected_name}. No alert sent.")
+        # --- Alert Logic ---
+        should_alert = False
+        alert_type = "unauthorized_access"
+        
+        if detected_name == "Unknown":
+            should_alert = True
+            print(f"🚨 UNKNOWN PERSON DETECTED! Triggering Alert...")
+        elif ALERT_KNOWN_PERSONS:
+            should_alert = True
+            alert_type = "known_person_entry"
+            print(f"🔔 KNOWN PERSON DETECTED ({detected_name})! Triggering Alert (Settings Enabled)...")
+        else:
+            print(f"Known person detected: {detected_name}. No alert sent (Settings Disabled).")
             return {
                 "status": "success",
                 "name": detected_name,
                 "message": f"Detected {detected_name} (Known - No Alert)"
             }
 
-        # Log to Firestore (Unknown Person)
-        if db:
-            print(f"🚨 UNKNOWN PERSON DETECTED! Uploading image and sending alert...")
-            
+        # Log to Firestore
+        if should_alert and db:
             # Upload Image
             image_url = upload_image_to_storage(img)
             
@@ -151,11 +167,11 @@ def process_frame(img, source="manual"):
             alert_data = {
                 "cameraName": "Simulator/ESP32", 
                 "timestamp": firestore.SERVER_TIMESTAMP,
-                "type": "unauthorized_access", # More specific type
-                "status": "unknown",
-                "personName": "Unknown",
+                "type": alert_type,
+                "status": "unknown" if detected_name == "Unknown" else "known",
+                "personName": detected_name,
                 "details": {
-                    "name": "Unknown",
+                    "name": detected_name,
                     "confidence": float(confidence)
                 },
                 "imageUrl": image_url
@@ -165,8 +181,8 @@ def process_frame(img, source="manual"):
             
         return {
             "status": "alerted", 
-            "name": "Unknown", 
-            "message": "Detected Unknown Person (Alert Sent)"
+            "name": detected_name, 
+            "message": f"Detected {detected_name} (Alert Sent)"
         }
 
     except Exception as e:

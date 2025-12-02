@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/Input";
 import { db, storage } from "@/lib/firebase/config";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { ArrowLeft, Upload, X } from "lucide-react";
+import { ArrowLeft, Camera, Upload, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export default function AddPersonPage() {
   const [name, setName] = useState("");
@@ -18,7 +18,85 @@ export default function AddPersonPage() {
   const [images, setImages] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (showCamera) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [showCamera]);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      alert("Could not access camera. Please allow camera permissions.");
+      setShowCamera(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const [isAutoCapturing, setIsAutoCapturing] = useState(false);
+  const captureIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
+    };
+  }, []);
+
+  const startAutoCapture = () => {
+    setIsAutoCapturing(true);
+    captureIntervalRef.current = setInterval(() => {
+      capturePhoto();
+    }, 500); // Capture every 500ms
+  };
+
+  const stopAutoCapture = () => {
+    setIsAutoCapturing(false);
+    if (captureIntervalRef.current) {
+      clearInterval(captureIntervalRef.current);
+      captureIntervalRef.current = null;
+    }
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement("canvas");
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `capture_${Date.now()}.jpg`, {
+              type: "image/jpeg",
+            });
+            setImages((prev) => [...prev, file]);
+            setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
+          }
+        }, "image/jpeg");
+      }
+    }
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -171,18 +249,55 @@ export default function AddPersonPage() {
                 className="hidden"
                 id="image-upload"
               />
-              <label htmlFor="image-upload">
+              <div className="flex justify-center gap-4">
+                <label htmlFor="image-upload">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      document.getElementById("image-upload")?.click()
+                    }
+                  >
+                    Select Files
+                  </Button>
+                </label>
                 <Button
                   type="button"
-                  variant="outline"
-                  onClick={() =>
-                    document.getElementById("image-upload")?.click()
-                  }
+                  variant="secondary"
+                  onClick={() => setShowCamera(!showCamera)}
                 >
-                  Select Images
+                  <Camera className="h-4 w-4 mr-2" />
+                  {showCamera ? "Close Camera" : "Use Camera"}
                 </Button>
-              </label>
+              </div>
             </div>
+
+            {showCamera && (
+              <div className="mt-4 p-4 bg-slate-900 rounded-lg border border-slate-700">
+                <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex justify-center gap-4">
+                  {!isAutoCapturing ? (
+                    <Button type="button" variant="primary" onClick={startAutoCapture}>
+                      <Camera className="h-4 w-4 mr-2" />
+                      Start Auto Capture
+                    </Button>
+                  ) : (
+                    <Button type="button" variant="danger" onClick={stopAutoCapture}>
+                      <X className="h-4 w-4 mr-2" />
+                      Stop Auto Capture
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {previews.length > 0 && (
               <div className="grid grid-cols-3 gap-4 mt-4">

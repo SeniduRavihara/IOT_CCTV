@@ -13,15 +13,25 @@ export default function SettingsPage() {
   const [pushNotifications, setPushNotifications] = useState(true);
   const [detectionThreshold, setDetectionThreshold] = useState(0.6);
   const [captureInterval, setCaptureInterval] = useState(30);
+  const [alertKnownPersons, setAlertKnownPersons] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
-    // Simulate save
-    setTimeout(() => {
-      setSaving(false);
+    try {
+      // Save to Backend
+      await fetch("http://localhost:5001/settings/alert-known", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: alertKnownPersons }),
+      });
       alert("Settings saved successfully!");
-    }, 1000);
+    } catch (error) {
+      console.error("Failed to save settings:", error);
+      alert("Failed to save settings");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -184,6 +194,24 @@ export default function SettingsPage() {
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" defaultChecked className="sr-only peer" />
+              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg">
+            <div>
+              <p className="font-medium text-white">Alert for Known Persons</p>
+              <p className="text-sm text-slate-400">
+                Send alerts even when a registered person is detected
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={alertKnownPersons}
+                onChange={(e) => setAlertKnownPersons(e.target.checked)}
+                className="sr-only peer" 
+              />
               <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
           </div>
