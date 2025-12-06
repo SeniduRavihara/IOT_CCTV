@@ -3,14 +3,15 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils/cn";
 import {
-  Bell,
-  Camera,
-  History,
-  LayoutDashboard,
-  LogOut,
-  Settings,
-  ShieldCheck,
-  Users,
+    Bell,
+    Camera,
+    Gamepad2,
+    History,
+    LayoutDashboard,
+    LogOut,
+    Settings,
+    ShieldCheck,
+    Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -21,6 +22,7 @@ const navigation = [
   { name: "Known Persons", href: "/dashboard/known-persons", icon: Users },
   { name: "Cameras", href: "/dashboard/cameras", icon: Camera },
   { name: "Live Feed", href: "/dashboard/live", icon: Camera },
+  { name: "Robot Control", href: "/dashboard/robot", icon: Gamepad2 },
   { name: "History", href: "/dashboard/history", icon: History },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
 ];

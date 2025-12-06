@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Servo Control Test</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Servo Control</h1>
+        <div class="status-bar">
+            Status: <span id="status">Disconnected</span>
+        </div>
+        <div class="video-container" style="text-align: center; margin-bottom: 20px;">
+            <img id="stream-img" src="" alt="Video Stream" style="max-width: 100%; border-radius: 8px; border: 2px solid #333; min-height: 240px; background: #000;">
+        </div>
+
+        <div class="control-group" style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+                <label>ESP32 IP Address</label>
+                <input type="text" id="esp-ip" value="192.168.43.223" placeholder="Enter ESP32 IP">
+            </div>
+            <div style="display: flex; align-items: flex-end;">
+                <button id="connect-btn" class="btn">Connect</button>
+            </div>
+        </div>
+
+        <div class="servo-card">
+            <h2>Pan Servo (GPIO 12)</h2>
+            <div class="slider-container">
+                <input type="range" min="0" max="180" value="90" class="slider" id="pan-slider">
+                <span class="value" id="pan-value">90°</span>
+            </div>
+        </div>
+
+        <div class="servo-card">
+            <h2>Tilt Servo (GPIO 13)</h2>
+            <div class="slider-container">
+                <input type="range" min="0" max="180" value="90" class="slider" id="tilt-slider">
+                <span class="value" id="tilt-value">90°</span>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>

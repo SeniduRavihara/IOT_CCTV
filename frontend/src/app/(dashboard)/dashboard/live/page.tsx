@@ -1,12 +1,13 @@
 "use client";
 
+import { RobotControl } from "@/components/RobotControl";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { db } from "@/lib/firebase/config";
 import { Camera } from "@/lib/types";
 import { collection, onSnapshot, query, where } from "firebase/firestore";
-import { Video, Wifi, WifiOff } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Maximize2, Minimize2, Video, Wifi, WifiOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 function LiveCameraCard({ camera }: { camera: Camera }) {
   const [isOnline, setIsOnline] = useState(true);
@@ -14,7 +15,28 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
 
   // For the simulator demo, we force it to localhost:5000
   // In a real deployment, this would be `http://${camera.ipAddress}/stream`
-  const streamUrl = "http://localhost:5000/stream";
+  const streamUrl = "http://localhost:5001/video_feed";
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
 
   return (
     <Card className="overflow-hidden">
@@ -43,7 +65,7 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
       </div>
 
       {/* Camera Feed */}
-      <div className="relative aspect-video bg-slate-900">
+      <div ref={containerRef} className="relative aspect-video bg-slate-900 group">
         {!imgError ? (
           <img
             src={streamUrl}
@@ -80,15 +102,38 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
             <span className="text-xs font-semibold text-white">LIVE</span>
           </div>
         )}
+
+        {/* Fullscreen Toggle */}
+        {isOnline && (
+          <button
+            onClick={toggleFullscreen}
+            className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-5 w-5" />
+            ) : (
+              <Maximize2 className="h-5 w-5" />
+            )}
+          </button>
+        )}
+
+        {/* Robot Control Overlay (Visible in Fullscreen or Normal) */}
+        {isOnline && (
+            <div className={`absolute bottom-4 left-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 group-hover:opacity-100' : ''}`}>
+                <div className="bg-black/40 backdrop-blur-sm p-2 rounded-2xl border border-white/10 scale-75 origin-bottom-left">
+                    <RobotControl />
+                </div>
+            </div>
+        )}
       </div>
 
-      {/* Camera Controls */}
-      <div className="p-4 bg-slate-900/50 border-t border-slate-800">
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-400">
+      {/* Camera Controls (Info only now) */}
+      <div className="p-4 bg-slate-900/50 border-t border-slate-800 flex items-center justify-between">
+        <div className="text-sm">
+          <span className="text-slate-400 block">
             Detection: {camera.settings?.detectionEnabled ? "Active" : "Paused"}
           </span>
-          <span className="text-slate-400">
+          <span className="text-slate-400 block">
             Sensitivity: {camera.settings?.motionSensitivity || 50}%
           </span>
         </div>

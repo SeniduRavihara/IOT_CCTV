@@ -1,0 +1,22 @@
+# Env files
+.env
+frontend/.env.local
+
+# Frontend deps/build
+frontend/node_modules/
+frontend/.next/
+
+# Python venvs
+backend/face_recognition_venv/
+backend/.venv/
+
+# Data volumes
+volumes/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# Logs and editor
+*.log
+.vscode/

@@ -4,8 +4,8 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { db } from "@/lib/firebase/config";
-import { formatDistanceToNow } from "date-fns";
-import { collection, getDocs, limit, onSnapshot, orderBy, query, writeBatch } from "firebase/firestore";
+import { formatDistanceToNow, startOfDay } from "date-fns";
+import { collection, getDocs, limit, onSnapshot, orderBy, query, Timestamp, where, writeBatch } from "firebase/firestore";
 import { AlertTriangle, Camera, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -14,38 +14,39 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // Stats state (could be real too, but let's fix alerts first)
-  const stats = [
+  const [stats, setStats] = useState([
     {
       name: "Total Alerts Today",
-      value: "12",
+      value: "0",
       icon: AlertTriangle,
       color: "text-red-400",
-      change: "+2 from yesterday",
+      change: "Loading...",
     },
     {
       name: "Unknown Persons",
-      value: "3",
+      value: "0",
       icon: AlertTriangle,
       color: "text-yellow-400",
-      change: "Requires attention",
+      change: "Loading...",
     },
     {
       name: "Active Cameras",
-      value: "4",
+      value: "0",
       icon: Camera,
       color: "text-green-400",
-      change: "All online",
+      change: "Loading...",
     },
     {
       name: "Known Persons",
-      value: "8",
+      value: "0",
       icon: Users,
       color: "text-blue-400",
-      change: "Registered",
+      change: "Loading...",
     },
-  ];
+  ]);
 
   useEffect(() => {
+    // 1. Fetch Recent Alerts
     const q = query(
       collection(db, "alerts"),
       orderBy("timestamp", "desc"),
@@ -61,7 +62,62 @@ export default function DashboardPage() {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // 2. Fetch Backend Stats (Known Persons & Active Cameras)
+    const fetchBackendStats = async () => {
+        try {
+            const res = await fetch('http://127.0.0.1:5001/stats');
+            if (res.ok) {
+                const data = await res.json();
+                setStats(prev => prev.map(stat => {
+                    if (stat.name === "Known Persons") {
+                        return { ...stat, value: data.known_persons.toString(), change: "Registered" };
+                    }
+                    if (stat.name === "Active Cameras") {
+                        return { ...stat, value: data.active_cameras.toString(), change: "Online" };
+                    }
+                    return stat;
+                }));
+            }
+        } catch (err) {
+            console.error("Failed to fetch backend stats", err);
+        }
+    };
+
+    // 3. Fetch Firestore Stats (Alerts Today & Unknowns)
+    const fetchFirestoreStats = async () => {
+        const today = startOfDay(new Date());
+        
+        // Query: Alerts after today 00:00
+        const alertsTodayQuery = query(
+            collection(db, "alerts"),
+            where("timestamp", ">=", Timestamp.fromDate(today))
+        );
+
+        const unsubscribeStats = onSnapshot(alertsTodayQuery, (snapshot) => {
+            const totalToday = snapshot.size;
+            const unknownsToday = snapshot.docs.filter(doc => doc.data().status === "unknown").length;
+
+            setStats(prev => prev.map(stat => {
+                if (stat.name === "Total Alerts Today") {
+                    return { ...stat, value: totalToday.toString(), change: "Since midnight" };
+                }
+                if (stat.name === "Unknown Persons") {
+                    return { ...stat, value: unknownsToday.toString(), change: "Requires attention" };
+                }
+                return stat;
+            }));
+        });
+        
+        return unsubscribeStats;
+    };
+
+    fetchBackendStats();
+    const statsUnsub = fetchFirestoreStats();
+
+    return () => {
+        unsubscribe();
+        statsUnsub.then(unsub => unsub && unsub());
+    };
   }, []);
 
   const handleClearAlerts = async () => {
@@ -79,6 +135,42 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error clearing alerts:", error);
       alert("Failed to clear alerts");
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const q = query(collection(db, "alerts"), orderBy("timestamp", "desc"));
+      const snapshot = await getDocs(q);
+      
+      const csvRows = [
+        ["ID", "Timestamp", "Person Name", "Status", "Confidence", "Camera Name"]
+      ];
+
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const date = data.timestamp ? data.timestamp.toDate().toLocaleString() : "N/A";
+        csvRows.push([
+          doc.id,
+          `"${date}"`,
+          `"${data.personName || "Unknown"}"`,
+          data.status,
+          data.details?.confidence ? `${data.details.confidence.toFixed(2)}%` : "N/A",
+          `"${data.cameraName || "N/A"}"`
+        ]);
+      });
+
+      const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `alerts_export_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error("Error exporting data:", error);
+      alert("Failed to export data");
     }
   };
 
@@ -213,7 +305,10 @@ export default function DashboardPage() {
               <button className="p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors">
                 Add Camera
               </button>
-              <button className="p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors">
+              <button 
+                onClick={handleExport}
+                className="p-4 bg-gray-700 hover:bg-gray-600 rounded-lg text-white font-medium transition-colors"
+              >
                 Export Data
               </button>
             </div>

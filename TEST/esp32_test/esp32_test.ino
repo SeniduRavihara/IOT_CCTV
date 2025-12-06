@@ -1,0 +1,167 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "esp_timer.h"
+#include "Arduino.h"
+
+// ==========================================
+// 1. NETWORK CONFIGURATION
+// ==========================================
+const char* ssid = "HUAWEI nova 3i";
+const char* password = "senidu1234";
+
+// Backend Server
+String serverName = "192.168.43.243"; 
+int serverPort = 5001;
+String serverPath = "/detect";
+
+// ==========================================
+// 2. SERVO CONFIGURATION (GPIO 12 & 13)
+// ==========================================
+#define SERVO_PAN_PIN 12
+#define SERVO_TILT_PIN 13
+
+// PWM Properties
+#define PWM_FREQ 50
+#define PWM_RES 16
+#define SERVO_MIN_US 500
+#define SERVO_MAX_US 2400
+#define SERVO_MIN_DUTY (int)((SERVO_MIN_US * 65536.0) / 20000.0)
+#define SERVO_MAX_DUTY (int)((SERVO_MAX_US * 65536.0) / 20000.0)
+
+#define SERVO_MAX_DUTY (int)((SERVO_MAX_US * 65536.0) / 20000.0)
+
+// Channels (Not needed for v3)
+// #define SERVO_PAN_CH 2
+// #define SERVO_TILT_CH 3
+
+// ==========================================
+// 3. DUMMY IMAGE (Small 1x1 JPEG Header)
+// ==========================================
+// This is a minimal valid JPEG header to satisfy the backend's image check
+const uint8_t dummy_jpg[] = {
+  0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x01, 0x00, 0x48,
+  0x00, 0x48, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
+  0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00, 0x01, 0x05, 0x01, 0x01,
+  0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04,
+  0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0xFF, 0xC4, 0x00, 0xB5, 0x10, 0x00, 0x02, 0x01, 0x03,
+  0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7D, 0x01, 0x02, 0x03, 0x00,
+  0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32,
+  0x81, 0x91, 0xA1, 0x08, 0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0, 0x24, 0x33, 0x62, 0x72,
+  0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x34, 0x35,
+  0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55,
+  0x56, 0x57, 0x58, 0x59, 0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74, 0x75,
+  0x76, 0x77, 0x78, 0x79, 0x7A, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8A, 0x92, 0x93, 0x94,
+  0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2,
+  0xB3, 0xB4, 0xB5, 0xB6, 0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9,
+  0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6,
+  0xE7, 0xE8, 0xE9, 0xEA, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFF, 0xDA,
+  0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x11, 0x03, 0x11, 0x00, 0x3F, 0x00, 0xF9, 0xFE, 0x8A, 0x28,
+  0xA0, 0x0F, 0xFF, 0xD9
+};
+const size_t dummy_len = sizeof(dummy_jpg);
+
+unsigned long lastUploadTime = 0;
+#define UPLOAD_INTERVAL 2000
+
+void setServoAngle(int pin, int angle) {
+  if (angle < 0) angle = 0;
+  if (angle > 180) angle = 180;
+  int duty = map(angle, 0, 180, SERVO_MIN_DUTY, SERVO_MAX_DUTY);
+  ledcWrite(pin, duty);
+}
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
+
+  // Servo Init (v3 API)
+  ledcAttach(SERVO_PAN_PIN, PWM_FREQ, PWM_RES);
+  ledcAttach(SERVO_TILT_PIN, PWM_FREQ, PWM_RES);
+
+  // Center Servos
+  setServoAngle(SERVO_PAN_PIN, 90);
+  setServoAngle(SERVO_TILT_PIN, 90);
+
+  // WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected");
+  Serial.print("ESP32 Simulator Ready! IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+void sendDummyImage() {
+  HTTPClient http;
+  String url = "http://" + serverName + ":" + String(serverPort) + serverPath;
+  
+  Serial.print("Sending Ping to: ");
+  Serial.println(url);
+
+  http.begin(url);
+
+  String head = "--RandomBoundary\r\nContent-Disposition: form-data; name=\"image\"; filename=\"dummy.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
+  String tail = "\r\n--RandomBoundary--\r\n";
+
+  uint32_t totalLen = dummy_len + head.length() + tail.length();
+
+  http.addHeader("Content-Type", "multipart/form-data; boundary=RandomBoundary");
+  http.addHeader("Content-Length", String(totalLen));
+
+  uint8_t *buffer = (uint8_t *)malloc(totalLen);
+  if (buffer) {
+    memcpy(buffer, head.c_str(), head.length());
+    memcpy(buffer + head.length(), dummy_jpg, dummy_len);
+    memcpy(buffer + head.length() + dummy_len, tail.c_str(), tail.length());
+
+    int httpResponseCode = http.POST(buffer, totalLen);
+    
+    if (httpResponseCode > 0) {
+      String response = http.getString();
+      Serial.println(httpResponseCode);
+      Serial.println(response);
+
+      // Parse Servo Command
+      int cmdIdx = response.indexOf("servo_cmd");
+      if (cmdIdx > 0) {
+        int panIdx = response.indexOf("\"pan\":", cmdIdx);
+        int tiltIdx = response.indexOf("\"tilt\":", cmdIdx);
+        
+        if (panIdx > 0 && tiltIdx > 0) {
+          int panEnd = response.indexOf(",", panIdx);
+          if (panEnd < 0) panEnd = response.indexOf("}", panIdx);
+          String panStr = response.substring(panIdx + 6, panEnd);
+          int panAngle = panStr.toInt();
+          
+          int tiltEnd = response.indexOf("}", tiltIdx);
+          if (tiltEnd < 0) tiltEnd = response.indexOf(",", tiltIdx);
+          String tiltStr = response.substring(tiltIdx + 7, tiltEnd);
+          int tiltAngle = tiltStr.toInt();
+          
+          Serial.printf("Moving Servos -> Pan: %d, Tilt: %d\n", panAngle, tiltAngle);
+          setServoAngle(SERVO_PAN_PIN, panAngle);
+          setServoAngle(SERVO_TILT_PIN, tiltAngle);
+        }
+      }
+    } else {
+      Serial.print("Error on sending POST: ");
+      Serial.println(httpResponseCode);
+    }
+    free(buffer);
+  } else {
+    Serial.println("Malloc failed!");
+  }
+  http.end();
+}
+
+void loop() {
+  if (millis() - lastUploadTime > UPLOAD_INTERVAL) {
+    sendDummyImage();
+    lastUploadTime = millis();
+  }
+}

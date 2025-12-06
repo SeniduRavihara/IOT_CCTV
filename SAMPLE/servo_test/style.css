@@ -1,0 +1,125 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1a1a1a;
+    color: #ffffff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+.container {
+    background-color: #2d2d2d;
+    padding: 2rem;
+    border-radius: 15px;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+    width: 100%;
+    max-width: 400px;
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #3b82f6;
+}
+
+.status-bar {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    padding: 0.5rem;
+    background-color: #374151;
+    border-radius: 5px;
+    font-size: 0.9rem;
+}
+
+.control-group {
+    margin-bottom: 1.5rem;
+}
+
+.control-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #9ca3af;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: #374151;
+    border: 1px solid #4b5563;
+    border-radius: 5px;
+    color: white;
+    box-sizing: border-box;
+    position: relative; /* Ensure it's on top */
+    z-index: 10;
+}
+
+.servo-card {
+    background-color: #374151;
+    padding: 1.5rem;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+}
+
+.servo-card h2 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+    color: #e5e7eb;
+}
+
+.slider-container {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.slider {
+    flex: 1;
+    height: 6px;
+    background: #4b5563;
+    border-radius: 5px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #3b82f6;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .15s ease-in-out;
+}
+
+.slider::-webkit-slider-thumb:hover {
+    background: #2563eb;
+}
+
+.value {
+    min-width: 40px;
+    text-align: right;
+    font-weight: bold;
+    color: #3b82f6;
+}
+
+.btn {
+    background-color: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    height: 42px; /* Match input height roughly */
+}
+
+.btn:hover {
+    background-color: #2563eb;
+}
+
+.btn:active {
+    transform: translateY(1px);
+}

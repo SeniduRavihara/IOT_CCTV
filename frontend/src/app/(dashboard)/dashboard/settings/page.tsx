@@ -1,258 +1,183 @@
 "use client";
 
-import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Input } from "@/components/ui/Input";
-import { useAuth } from "@/contexts/AuthContext";
-import { Bell, Lock, Mail, Save, Shield, Sliders, User } from "lucide-react";
-import { useState } from "react";
+import { Bell, Shield, UserCheck, Lightbulb } from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function SettingsPage() {
-  const { user } = useAuth();
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [detectionThreshold, setDetectionThreshold] = useState(0.6);
-  const [captureInterval, setCaptureInterval] = useState(30);
-  const [alertKnownPersons, setAlertKnownPersons] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [alertKnown, setAlertKnown] = useState(false);
+  const [flashlight, setFlashlight] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = async () => {
-    setSaving(true);
+  // Fetch current setting on mount (You might need a GET endpoint or just default to false)
+  // Since we don't have a GET endpoint for this specific setting yet, we'll default to false
+  // or we can add a GET endpoint to main.py. For now, let's assume false.
+  useEffect(() => {
+    const fetchSettings = async () => {
+      setLoading(true);
+      try {
+        // Fetch alertKnown state
+        const alertKnownResponse = await fetch("http://localhost:5001/settings/alert-known");
+        if (alertKnownResponse.ok) {
+          const data = await alertKnownResponse.json();
+          setAlertKnown(data.enabled);
+        } else {
+          console.error("Failed to fetch alertKnown setting");
+        }
+
+        // Fetch flashlight state
+        const flashlightResponse = await fetch("http://localhost:5001/settings/flashlight");
+        if (flashlightResponse.ok) {
+          const data = await flashlightResponse.json();
+          setFlashlight(data.enabled);
+        } else {
+          console.error("Failed to fetch flashlight setting");
+        }
+      } catch (error) {
+        console.error("Error fetching settings:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
+
+  const toggleAlertKnown = async () => {
+    setLoading(true);
     try {
-      // Save to Backend
-      await fetch("http://localhost:5001/settings/alert-known", {
+      const newState = !alertKnown;
+      const response = await fetch("http://localhost:5001/settings/alert-known", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: alertKnownPersons }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enabled: newState }),
       });
-      alert("Settings saved successfully!");
+
+      if (response.ok) {
+        setAlertKnown(newState);
+      } else {
+        console.error("Failed to update setting");
+      }
     } catch (error) {
-      console.error("Failed to save settings:", error);
-      alert("Failed to save settings");
+      console.error("Error updating setting:", error);
     } finally {
-      setSaving(false);
+      setLoading(false);
+    }
+  };
+
+  const toggleFlashlight = async () => {
+    try {
+      const newState = !flashlight;
+      const response = await fetch("http://localhost:5001/control", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ led: newState }),
+      });
+
+      if (response.ok) {
+        setFlashlight(newState);
+      } else {
+        console.error("Failed to toggle flashlight");
+      }
+    } catch (error) {
+      console.error("Error toggling flashlight:", error);
     }
   };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Header */}
+    <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold text-white">Settings</h1>
         <p className="text-slate-400 mt-1">
-          Manage your preferences and system configuration
+          Configure your security preferences
         </p>
       </div>
 
-      {/* Profile Settings */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-blue-500/20 rounded-lg">
-            <User className="h-5 w-5 text-blue-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">
-              Profile Settings
-            </h2>
-            <p className="text-sm text-slate-400">
-              Manage your account information
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <Input
-            label="Email Address"
-            type="email"
-            value={user?.email || ""}
-            disabled
-          />
-          <Input label="Display Name" type="text" placeholder="Your name" />
-          <Button variant="primary">Update Profile</Button>
-        </div>
-      </Card>
-
-      {/* Notification Settings */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-purple-500/20 rounded-lg">
-            <Bell className="h-5 w-5 text-purple-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">Notifications</h2>
-            <p className="text-sm text-slate-400">
-              Choose how you want to be notified
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="font-medium text-white">Email Notifications</p>
-              <p className="text-sm text-slate-400">Receive alerts via email</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Security Settings Card */}
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-blue-500/20 rounded-lg">
+              <Shield className="h-6 w-6 text-blue-400" />
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={emailNotifications}
-                onChange={(e) => setEmailNotifications(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+            <h2 className="text-xl font-semibold text-white">Security Rules</h2>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="font-medium text-white">Push Notifications</p>
-              <p className="text-sm text-slate-400">
-                Receive browser notifications
-              </p>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-800">
+              <div className="flex items-start gap-3">
+                <UserCheck className="h-5 w-5 text-slate-400 mt-1" />
+                <div>
+                  <h3 className="font-medium text-white">Known Person Alerts</h3>
+                  <p className="text-sm text-slate-400">
+                    Receive notifications when registered family members are detected.
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={alertKnown}
+                  onChange={toggleAlertKnown}
+                  disabled={loading}
+                />
+                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={pushNotifications}
-                onChange={(e) => setPushNotifications(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
 
-          <Input
-            label="Notification Email"
-            type="email"
-            placeholder="alerts@example.com"
-          />
-        </div>
-      </Card>
-
-      {/* Detection Settings */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-green-500/20 rounded-lg">
-            <Sliders className="h-5 w-5 text-green-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">
-              Detection Settings
-            </h2>
-            <p className="text-sm text-slate-400">
-              Configure AI detection parameters
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Recognition Threshold: {detectionThreshold.toFixed(2)}
-            </label>
-            <input
-              type="range"
-              min="0.3"
-              max="0.9"
-              step="0.05"
-              value={detectionThreshold}
-              onChange={(e) =>
-                setDetectionThreshold(parseFloat(e.target.value))
-              }
-              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              Lower = more sensitive (more false positives) | Higher = less
-              sensitive (may miss detections)
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Capture Interval: {captureInterval} seconds
-            </label>
-            <input
-              type="range"
-              min="10"
-              max="120"
-              step="10"
-              value={captureInterval}
-              onChange={(e) => setCaptureInterval(parseInt(e.target.value))}
-              className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              How often the camera captures images (lower = more frequent)
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="font-medium text-white">Motion Detection</p>
-              <p className="text-sm text-slate-400">
-                Capture only when motion is detected
-              </p>
+            {/* Placeholder for other settings */}
+            <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-800 opacity-50 cursor-not-allowed">
+              <div className="flex items-start gap-3">
+                <Bell className="h-5 w-5 text-slate-400 mt-1" />
+                <div>
+                  <h3 className="font-medium text-white">Push Notifications</h3>
+                  <p className="text-sm text-slate-400">
+                    Send alerts to mobile device (Coming Soon)
+                  </p>
+                </div>
+              </div>
+              <div className="w-11 h-6 bg-slate-700 rounded-full"></div>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" defaultChecked className="sr-only peer" />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
           </div>
+        </Card>
 
-          <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-lg">
-            <div>
-              <p className="font-medium text-white">Alert for Known Persons</p>
-              <p className="text-sm text-slate-400">
-                Send alerts even when a registered person is detected
-              </p>
+        {/* Camera Controls Card */}
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-yellow-500/20 rounded-lg">
+              <Lightbulb className="h-6 w-6 text-yellow-400" />
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={alertKnownPersons}
-                onChange={(e) => setAlertKnownPersons(e.target.checked)}
-                className="sr-only peer" 
-              />
-              <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+            <h2 className="text-xl font-semibold text-white">Camera Controls</h2>
           </div>
-        </div>
-      </Card>
 
-      {/* Security */}
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2 bg-red-500/20 rounded-lg">
-            <Shield className="h-5 w-5 text-red-400" />
+          <div className="space-y-6">
+            <div className="flex items-center justify-between p-4 bg-slate-900/50 rounded-xl border border-slate-800">
+              <div className="flex items-start gap-3">
+                <Lightbulb className="h-5 w-5 text-slate-400 mt-1" />
+                <div>
+                  <h3 className="font-medium text-white">Camera Flashlight</h3>
+                  <p className="text-sm text-slate-400">
+                    Turn on the ESP32-CAM high-power LED.
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={flashlight}
+                  onChange={toggleFlashlight}
+                />
+                <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-yellow-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-yellow-500"></div>
+              </label>
+            </div>
           </div>
-          <div>
-            <h2 className="text-xl font-semibold text-white">Security</h2>
-            <p className="text-sm text-slate-400">
-              Manage your security settings
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <Button variant="outline" className="w-full justify-start">
-            <Lock className="h-4 w-4 mr-2" />
-            Change Password
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full justify-start text-red-400 hover:bg-red-500/10"
-          >
-            <Mail className="h-4 w-4 mr-2" />
-            Delete Account
-          </Button>
-        </div>
-      </Card>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button variant="primary" onClick={handleSave} isLoading={saving}>
-          <Save className="h-4 w-4 mr-2" />
-          Save All Changes
-        </Button>
+        </Card>
       </div>
     </div>
   );

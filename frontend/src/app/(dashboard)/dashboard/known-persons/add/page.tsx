@@ -19,18 +19,22 @@ export default function AddPersonPage() {
   const [previews, setPreviews] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [useEsp32, setUseEsp32] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const router = useRouter();
 
   useEffect(() => {
     if (showCamera) {
-      startCamera();
+      if (!useEsp32) {
+        startCamera();
+      }
     } else {
       stopCamera();
     }
     return () => stopCamera();
-  }, [showCamera]);
+  }, [showCamera, useEsp32]);
 
   const startCamera = async () => {
     try {
@@ -78,7 +82,25 @@ export default function AddPersonPage() {
   };
 
   const capturePhoto = () => {
-    if (videoRef.current) {
+    if (useEsp32 && imgRef.current) {
+        const canvas = document.createElement("canvas");
+        canvas.width = imgRef.current.naturalWidth;
+        canvas.height = imgRef.current.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+            // CORS might be an issue if not handled by ESP32 headers
+            ctx.drawImage(imgRef.current, 0, 0);
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    const file = new File([blob], `capture_${Date.now()}.jpg`, {
+                        type: "image/jpeg",
+                    });
+                    setImages((prev) => [...prev, file]);
+                    setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
+                }
+            }, "image/jpeg");
+        }
+    } else if (videoRef.current) {
       const canvas = document.createElement("canvas");
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
@@ -270,18 +292,38 @@ export default function AddPersonPage() {
                   {showCamera ? "Close Camera" : "Use Camera"}
                 </Button>
               </div>
+              
+              {showCamera && (
+                  <div className="flex justify-center mt-2">
+                      <label className="inline-flex items-center cursor-pointer">
+                          <input type="checkbox" className="sr-only peer" checked={useEsp32} onChange={(e) => setUseEsp32(e.target.checked)} />
+                          <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                          <span className="ms-3 text-sm font-medium text-gray-300">Use ESP32 Camera</span>
+                      </label>
+                  </div>
+              )}
             </div>
 
             {showCamera && (
               <div className="mt-4 p-4 bg-slate-900 rounded-lg border border-slate-700">
                 <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
+                  {useEsp32 ? (
+                      <img 
+                        ref={imgRef}
+                        src="http://192.168.43.223/stream" 
+                        crossOrigin="anonymous"
+                        alt="ESP32 Stream" 
+                        className="w-full h-full object-contain"
+                      />
+                  ) : (
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full h-full object-cover"
+                      />
+                  )}
                 </div>
                 <div className="flex justify-center gap-4">
                   {!isAutoCapturing ? (
@@ -308,6 +350,7 @@ export default function AddPersonPage() {
                         src={preview}
                         alt={`Preview ${index}`}
                         fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                         className="object-cover"
                       />
                     </div>

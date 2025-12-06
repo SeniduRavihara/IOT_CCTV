@@ -69,11 +69,9 @@ node_modules/
 # dataconnect generated files
 .dataconnect
 
-# /SAMPLE
 venv/
 backend/faces_db/
 backend/serviceAccountKey.json
 __pycache__/
 *.pyc
 
-/SAMPLE

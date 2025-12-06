@@ -1,4 +1,4 @@
-let espIp = '192.168.1.100';
+let espIp = '192.168.43.187';
 let updateInterval;
 
 const statusDot = document.getElementById('status-dot');

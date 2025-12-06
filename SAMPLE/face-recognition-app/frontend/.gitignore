@@ -1,0 +1,4 @@
+node_modules
+volumes/
+.next/
+face_recognition_venv/
