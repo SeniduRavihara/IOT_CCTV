@@ -83,23 +83,23 @@ export default function AddPersonPage() {
 
   const capturePhoto = () => {
     if (useEsp32 && imgRef.current) {
-        const canvas = document.createElement("canvas");
-        canvas.width = imgRef.current.naturalWidth;
-        canvas.height = imgRef.current.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        if (ctx) {
-            // CORS might be an issue if not handled by ESP32 headers
-            ctx.drawImage(imgRef.current, 0, 0);
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    const file = new File([blob], `capture_${Date.now()}.jpg`, {
-                        type: "image/jpeg",
-                    });
-                    setImages((prev) => [...prev, file]);
-                    setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
-                }
-            }, "image/jpeg");
-        }
+      const canvas = document.createElement("canvas");
+      canvas.width = imgRef.current.naturalWidth;
+      canvas.height = imgRef.current.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        // CORS might be an issue if not handled by ESP32 headers
+        ctx.drawImage(imgRef.current, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], `capture_${Date.now()}.jpg`, {
+              type: "image/jpeg",
+            });
+            setImages((prev) => [...prev, file]);
+            setPreviews((prev) => [...prev, URL.createObjectURL(blob)]);
+          }
+        }, "image/jpeg");
+      }
     } else if (videoRef.current) {
       const canvas = document.createElement("canvas");
       canvas.width = videoRef.current.videoWidth;
@@ -182,15 +182,19 @@ export default function AddPersonPage() {
               method: "POST",
               body: formData,
             });
-            
+
             if (!res.ok) {
-                console.error(`Failed to register image with AI backend: ${res.statusText}`);
+              console.error(
+                `Failed to register image with AI backend: ${res.statusText}`
+              );
             }
           })
         );
       } catch (error) {
         console.error("Error registering with AI backend:", error);
-        alert("Saved to database, but AI registration failed. Ensure backend is running.");
+        alert(
+          "Saved to database, but AI registration failed. Ensure backend is running."
+        );
       }
 
       router.push("/dashboard/known-persons");
@@ -292,15 +296,22 @@ export default function AddPersonPage() {
                   {showCamera ? "Close Camera" : "Use Camera"}
                 </Button>
               </div>
-              
+
               {showCamera && (
-                  <div className="flex justify-center mt-2">
-                      <label className="inline-flex items-center cursor-pointer">
-                          <input type="checkbox" className="sr-only peer" checked={useEsp32} onChange={(e) => setUseEsp32(e.target.checked)} />
-                          <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                          <span className="ms-3 text-sm font-medium text-gray-300">Use ESP32 Camera</span>
-                      </label>
-                  </div>
+                <div className="flex justify-center mt-2">
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={useEsp32}
+                      onChange={(e) => setUseEsp32(e.target.checked)}
+                    />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    <span className="ms-3 text-sm font-medium text-gray-300">
+                      Use ESP32 Camera
+                    </span>
+                  </label>
+                </div>
               )}
             </div>
 
@@ -308,31 +319,39 @@ export default function AddPersonPage() {
               <div className="mt-4 p-4 bg-slate-900 rounded-lg border border-slate-700">
                 <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-4">
                   {useEsp32 ? (
-                      <img 
-                        ref={imgRef}
-                        src="http://192.168.43.223/stream" 
-                        crossOrigin="anonymous"
-                        alt="ESP32 Stream" 
-                        className="w-full h-full object-contain"
-                      />
+                    <img
+                      ref={imgRef}
+                      src="http://192.168.43.223/stream"
+                      crossOrigin="anonymous"
+                      alt="ESP32 Stream"
+                      className="w-full h-full object-contain"
+                    />
                   ) : (
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        muted
-                        className="w-full h-full object-cover"
-                      />
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="w-full h-full object-cover"
+                    />
                   )}
                 </div>
                 <div className="flex justify-center gap-4">
                   {!isAutoCapturing ? (
-                    <Button type="button" variant="primary" onClick={startAutoCapture}>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={startAutoCapture}
+                    >
                       <Camera className="h-4 w-4 mr-2" />
                       Start Auto Capture
                     </Button>
                   ) : (
-                    <Button type="button" variant="danger" onClick={stopAutoCapture}>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={stopAutoCapture}
+                    >
                       <X className="h-4 w-4 mr-2" />
                       Stop Auto Capture
                     </Button>

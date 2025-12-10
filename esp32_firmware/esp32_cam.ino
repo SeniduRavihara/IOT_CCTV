@@ -51,6 +51,8 @@ const char* server_url = "http://192.168.43.243:5001/detect"; // Backend URL
 
 httpd_handle_t camera_httpd = NULL;
 bool is_streaming = false;
+volatile bool control_active = false;  // Pause streaming during servo control
+volatile bool stream_enabled = true;   // Master switch for streaming
 
 void setServoAngle(int pin, int angle) {
   if (angle < 0) angle = 0;
@@ -73,57 +75,81 @@ static esp_err_t stream_handler(httpd_req_t *req){
     esp_err_t res = ESP_OK;
     size_t _jpg_buf_len = 0;
     uint8_t * _jpg_buf = NULL;
-    char * part_buf[64];
+    char part_buf[128];
+
+    // Check if streaming is enabled
+    if(!stream_enabled){
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_set_type(req, "text/plain");
+        return httpd_resp_send(req, "Stream is paused. Use /stream_control?enable=1 to resume.", 60);
+    }
 
     res = httpd_resp_set_type(req, "multipart/x-mixed-replace;boundary=123456789000000000000987654321");
     if(res != ESP_OK) return res;
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_set_hdr(req, "X-Framerate", "60");  // Tell browser to expect high FPS
     is_streaming = true;
 
-    while(true){
+    while(stream_enabled){  // Exit loop if streaming disabled
+        // Pause streaming if servo control is active
+        if(control_active){
+            delay(10);  // Wait for control to finish
+            continue;
+        }
+        
         fb = esp_camera_fb_get();
         if (!fb) {
             Serial.println("Camera capture failed");
             res = ESP_FAIL;
-        } else {
-            if(fb->format != PIXFORMAT_JPEG){
-                bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
-                esp_camera_fb_return(fb);
-                fb = NULL;
-                if(!jpeg_converted){
-                    Serial.println("JPEG compression failed");
-                    res = ESP_FAIL;
-                }
-            } else {
-                _jpg_buf_len = fb->len;
-                _jpg_buf = fb->buf;
-            }
+            break;
+        }
+        
+        _jpg_buf_len = fb->len;
+        _jpg_buf = fb->buf;
+        
+        if(res == ESP_OK){
+            res = httpd_resp_send_chunk(req, "--123456789000000000000987654321\r\n", 37);
         }
         if(res == ESP_OK){
-            size_t hlen = snprintf((char *)part_buf, 64, "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", _jpg_buf_len);
-            res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+            size_t hlen = snprintf(part_buf, 128, "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", _jpg_buf_len);
+            res = httpd_resp_send_chunk(req, part_buf, hlen);
         }
         if(res == ESP_OK){
             res = httpd_resp_send_chunk(req, (const char *)_jpg_buf, _jpg_buf_len);
         }
         if(res == ESP_OK){
-            res = httpd_resp_send_chunk(req, "\r\n--123456789000000000000987654321\r\n", 37);
+            res = httpd_resp_send_chunk(req, "\r\n", 2);
         }
-        if(fb){
-            esp_camera_fb_return(fb);
-            fb = NULL;
-            _jpg_buf = NULL;
-        } else if(_jpg_buf){
-            free(_jpg_buf);
-            _jpg_buf = NULL;
-        }
+        
+        esp_camera_fb_return(fb);
+        
         if(res != ESP_OK){
             break;
         }
+        
+        // Small delay to prevent camera lock and allow other requests
+        delay(10);  // Minimal delay, high FPS
     }
     is_streaming = false;
     return res;
+}
+
+static esp_err_t stream_control_handler(httpd_req_t *req){
+    char param[32] = {0,};
+    
+    if(httpd_req_get_url_query_str(req, param, sizeof(param)) == ESP_OK) {
+        char value[8];
+        if(httpd_query_key_value(param, "enable", value, sizeof(value)) == ESP_OK) {
+            int enable = atoi(value);
+            stream_enabled = (enable == 1);
+            Serial.printf("📹 Stream %s\n", stream_enabled ? "ENABLED" : "DISABLED");
+        }
+    }
+    
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, stream_enabled ? "Stream enabled" : "Stream disabled", 
+                          stream_enabled ? 14 : 15);
 }
 
 static esp_err_t control_handler(httpd_req_t *req){
@@ -132,10 +158,14 @@ static esp_err_t control_handler(httpd_req_t *req){
     char param[32] = {0,};
     char value[32] = {0,};
 
+    // Signal streaming to pause (non-blocking)
+    control_active = true;
+    
     buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1) {
         buf = (char*)malloc(buf_len);
         if(!buf){
+            control_active = false;
             httpd_resp_send_500(req);
             return ESP_FAIL;
         }
@@ -143,23 +173,24 @@ static esp_err_t control_handler(httpd_req_t *req){
             if (httpd_query_key_value(buf, "pan", value, sizeof(value)) == ESP_OK) {
                 int val = atoi(value);
                 setServoAngle(SERVO_PAN_PIN, val);
-                Serial.printf("Pan: %d\n", val);
+                Serial.printf("✓ Pan: %d\n", val);
             }
             if (httpd_query_key_value(buf, "tilt", value, sizeof(value)) == ESP_OK) {
                 int val = atoi(value);
                 setServoAngle(SERVO_TILT_PIN, val);
-                Serial.printf("Tilt: %d\n", val);
+                Serial.printf("✓ Tilt: %d\n", val);
             }
             if (httpd_query_key_value(buf, "led", value, sizeof(value)) == ESP_OK) {
                 int val = atoi(value);
-                // Simple ON/OFF or PWM. Let's do simple ON/OFF for now.
-                // GPIO 4 is active HIGH for Flash
                 digitalWrite(FLASH_GPIO_NUM, val > 0 ? HIGH : LOW);
-                Serial.printf("LED: %d\n", val);
+                Serial.printf("✓ LED: %d\n", val);
             }
         }
         free(buf);
     }
+    
+    // Resume streaming immediately
+    control_active = false;
     
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     return httpd_resp_send(req, "OK", 2);
@@ -168,6 +199,15 @@ static esp_err_t control_handler(httpd_req_t *req){
 void startCameraServer(){
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
+    config.ctrl_port = 32768;
+    config.max_open_sockets = 7;
+    config.max_uri_handlers = 8;
+    config.max_resp_headers = 8;
+    config.backlog_conn = 5;
+    config.lru_purge_enable = true;
+    config.recv_wait_timeout = 5;
+    config.send_wait_timeout = 5;
+    config.stack_size = 8192;  // Increased stack size for better streaming
 
     httpd_uri_t index_uri = {
         .uri       = "/",
@@ -190,34 +230,60 @@ void startCameraServer(){
         .user_ctx  = NULL
     };
 
+    httpd_uri_t stream_control_uri = {
+        .uri       = "/stream_control",
+        .method    = HTTP_GET,
+        .handler   = stream_control_handler,
+        .user_ctx  = NULL
+    };
+
     if (httpd_start(&camera_httpd, &config) == ESP_OK) {
         httpd_register_uri_handler(camera_httpd, &index_uri);
         httpd_register_uri_handler(camera_httpd, &stream_uri);
         httpd_register_uri_handler(camera_httpd, &control_uri);
+        httpd_register_uri_handler(camera_httpd, &stream_control_uri);
     }
 }
 
 // ==========================================
 // 5. MOTION DETECTION LOGIC
 // ==========================================
-#define MOTION_THRESHOLD 40 // Change threshold
-camera_fb_t * prev_fb = NULL;
+#define MOTION_THRESHOLD 900    // Sensitivity (lower = more sensitive)
+#define MOTION_SAMPLE_PIXELS 100  // Number of pixels to check
 
-bool checkMotion(camera_fb_t * fb) {
-    if (!prev_fb) {
-        prev_fb = esp_camera_fb_get(); // Copy logic needed if we want to keep it
-        // Actually, we can't easily deep copy fb in Arduino without alloc
-        // Simplified: Just return true periodically? No, user wants real motion.
-        // Let's use a simple frame diff on a few pixels.
-        return true; // First frame always triggers?
+uint32_t prev_frame_checksum = 0;
+
+bool detectMotion(camera_fb_t * fb) {
+    // Simple motion detection: Compare pixel checksums
+    // Sample pixels evenly across the frame
+    uint32_t current_checksum = 0;
+    uint32_t step = fb->len / MOTION_SAMPLE_PIXELS;
+    
+    for (int i = 0; i < MOTION_SAMPLE_PIXELS; i++) {
+        current_checksum += fb->buf[i * step];
     }
-    return true; // Placeholder for now, implementing full diff is heavy
+    
+    // First frame - no motion detection possible
+    if (prev_frame_checksum == 0) {
+        prev_frame_checksum = current_checksum;
+        Serial.println("First frame - initializing motion detection");
+        return true;  // Send first frame
+    }
+    
+    // Calculate difference
+    uint32_t diff = abs((int32_t)(current_checksum - prev_frame_checksum));
+    prev_frame_checksum = current_checksum;
+    
+    // DEBUG: Print diff value to tune threshold
+    Serial.printf("Motion check - Diff: %u (Threshold: %d)\n", diff, MOTION_THRESHOLD);
+    
+    if (diff > MOTION_THRESHOLD) {
+        Serial.printf("✓ Motion detected! Diff: %u\n", diff);
+        return true;
+    }
+    
+    return false;
 }
-
-// Simplified Motion: Send frame every 2 seconds if not streaming
-// Or better: Send frame to backend for processing?
-// User said: "in esp32 cam we can ditect motion"
-// Okay, let's implement a basic pixel check.
 
 void sendImageToBackend(camera_fb_t * fb) {
     HTTPClient http;
@@ -286,9 +352,12 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_QVGA; // Lower res for speed
-  config.jpeg_quality = 12;
-  config.fb_count = 1;
+  
+  // OPTIMIZED FOR SMOOTH STREAMING (not quality)
+  config.frame_size = FRAMESIZE_SVGA;  // 800x600 - good balance
+  config.jpeg_quality = 12;  // Lower quality = smaller files = faster streaming
+  config.fb_count = 2;  // Double buffer for smooth streaming
+  config.grab_mode = CAMERA_GRAB_LATEST;  // Always grab latest frame (skip old frames)
 
   esp_camera_init(&config);
 
@@ -300,37 +369,64 @@ void setup() {
   pinMode(FLASH_GPIO_NUM, OUTPUT);
   digitalWrite(FLASH_GPIO_NUM, LOW);
 
+  // WiFi Configuration for maximum performance
   WiFi.begin(ssid, password);
+  WiFi.setSleep(false);  // Disable WiFi sleep for better streaming performance
+  
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+  Serial.println("");
   Serial.println("WiFi connected");
+  Serial.print("Camera Ready! Use 'http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("' to connect");
+  Serial.print("Stream URL: http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/stream");
+  
+  // Set WiFi to maximum transmit power
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Maximum WiFi power
   
   startCameraServer();
 }
 
 long last_motion_check = 0;
+long last_frame_sent = 0;
+long last_stream_warning = 0;
+#define CHECK_INTERVAL 2000  // Check for motion every 2 seconds when streaming
+#define CHECK_INTERVAL_NORMAL 500  // Check every 500ms when not streaming
 
 void loop() {
-  // If streaming, don't do motion detection (CPU busy)
-  if (is_streaming) {
-      delay(100);
-      return;
-  }
-
-  // Simple Motion Logic: Send frame every 500ms?
-  // Or just send every frame? (Too fast)
-  // Let's send every 200ms (5 FPS) to backend.
-  // The backend will handle the "Motion" logic (Face Detection).
-  // This is "Edge Capture, Cloud Processing".
+  // Adjust motion detection based on streaming state
+  int check_interval = is_streaming ? CHECK_INTERVAL : CHECK_INTERVAL_NORMAL;
   
-  if (millis() - last_motion_check > 200) {
+  // Check for motion periodically
+  if (millis() - last_motion_check > check_interval) {
       camera_fb_t * fb = esp_camera_fb_get();
       if (fb) {
-          sendImageToBackend(fb);
+          // Only send frame if motion detected
+          if (detectMotion(fb)) {
+              // Limit frame rate to avoid spamming backend
+              if (millis() - last_frame_sent > 3000) {  // Max 1 frame per 3 seconds
+                  sendImageToBackend(fb);
+                  last_frame_sent = millis();
+                  Serial.println("📸 Frame sent to backend for AI detection");
+              } else {
+                  Serial.println("Motion detected but rate limited");
+              }
+          }
           esp_camera_fb_return(fb);
       }
       last_motion_check = millis();
+      
+      // Show streaming status
+      if (is_streaming && (millis() - last_stream_warning > 10000)) {
+          Serial.println("ℹ️ Live stream active - motion detection running slower");
+          last_stream_warning = millis();
+      }
   }
+  
+  delay(10);  // Small delay to prevent watchdog issues
 }

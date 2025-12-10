@@ -6,14 +6,14 @@ import { db } from "@/lib/firebase/config";
 import { Alert } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import {
-    collection,
-    getDocs,
-    limit,
-    onSnapshot,
-    orderBy,
-    query,
-    where,
-    writeBatch,
+  collection,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { Bell, Download, Grid3x3, List, Trash2 } from "lucide-react";
 import Image from "next/image";
@@ -57,12 +57,17 @@ export default function AlertsPage() {
   }, [filter]);
 
   const handleClearAlerts = async () => {
-    if (!confirm("Are you sure you want to delete ALL alerts? This cannot be undone.")) return;
-    
+    if (
+      !confirm(
+        "Are you sure you want to delete ALL alerts? This cannot be undone."
+      )
+    )
+      return;
+
     try {
       const q = query(collection(db, "alerts"));
       const snapshot = await getDocs(q);
-      
+
       const batch = writeBatch(db);
       snapshot.docs.forEach((doc) => {
         batch.delete(doc.ref);
@@ -93,19 +98,19 @@ export default function AlertsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-            <Button 
-                variant="outline" 
-                onClick={handleClearAlerts}
-                disabled={alerts.length === 0}
-                className="text-red-400 border-red-900/50 hover:bg-red-900/20 hover:text-red-300"
-            >
+          <Button
+            variant="outline"
+            onClick={handleClearAlerts}
+            disabled={alerts.length === 0}
+            className="text-red-400 border-red-900/50 hover:bg-red-900/20 hover:text-red-300"
+          >
             <Trash2 className="h-4 w-4 mr-2" />
             Clear All
-            </Button>
-            <Button variant="primary">
+          </Button>
+          <Button variant="primary">
             <Download className="h-4 w-4 mr-2" />
             Export
-            </Button>
+          </Button>
         </div>
       </div>
 
@@ -271,13 +276,17 @@ export default function AlertsPage() {
                   >
                     <td className="px-6 py-4">
                       <div className="relative h-12 w-12 rounded-lg overflow-hidden bg-slate-800">
-                        {alert.thumbnailUrl && (
+                        {alert.thumbnailUrl || alert.imageUrl ? (
                           <Image
-                            src={alert.thumbnailUrl}
+                            src={alert.thumbnailUrl || alert.imageUrl}
                             alt="Alert"
                             fill
                             className="object-cover"
                           />
+                        ) : (
+                          <div className="flex items-center justify-center h-full">
+                            <Bell className="h-6 w-6 text-slate-600" />
+                          </div>
                         )}
                       </div>
                     </td>

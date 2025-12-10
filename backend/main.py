@@ -63,10 +63,15 @@ FACES_DB_PATH = "faces_db"
 if not os.path.exists(FACES_DB_PATH):
     os.makedirs(FACES_DB_PATH)
 
+# ESP32 Camera Configuration
+ESP32_IP = os.getenv("ESP32_IP", "192.168.43.223")  # ESP32-CAM IP Address
+# Control request timeout in seconds
+ESP32_TIMEOUT = int(os.getenv("ESP32_TIMEOUT", "2"))
+
 # Global state for alert cooldowns
 # Global state for alert cooldowns
 last_alert_times = {}
-ALERT_COOLDOWN = 60  # Seconds before alerting for the same person again
+ALERT_COOLDOWN = 5  # Seconds before alerting for the same person again
 ALERT_KNOWN_PERSONS = False  # Default: Don't alert for known people
 
 # Global state for servo positions
@@ -77,6 +82,7 @@ servo_state = {
 }
 
 # Global state for latest frame (for streaming)
+# ESP32 pushes frames via /detect endpoint, we serve them via /video_feed
 latest_frame = None
 lock = threading.Lock()
 
@@ -119,7 +125,7 @@ def upload_image_to_storage(img):
         return ""
 
 
-def process_frame(img, source="manual"):
+def process_frame(img, source="manual", save_debug=False, debug_path=None):
     """
     Process a single image frame:
     1. Run Face Recognition
@@ -130,13 +136,39 @@ def process_frame(img, source="manual"):
     try:
         detected_name = "Unknown"
         confidence = 0.0
+        face_detected = False
+
+        # Pre-check: Detect if face exists before heavy recognition
+        face_cascade = cv2.CascadeClassifier(
+            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+
+        if len(faces) == 0:
+            print("DEBUG: No face detected in frame, skipping recognition")
+
+            # Save debug image as "no_face"
+            if save_debug and debug_path:
+                no_face_path = debug_path.replace("frame_", "NO_FACE_")
+                cv2.imwrite(no_face_path, img)
+                print(f"🔍 DEBUG: Saved NO FACE frame to {no_face_path}")
+
+            return {
+                "status": "success",
+                "name": "Unknown",
+                "message": "No face detected in frame",
+                "face_detected": False
+            }
+
+        face_detected = True
+        print(f"DEBUG: Face detected, running recognition...")
 
         try:
-            # Run Face Recognition
-            # Optimization: Pass numpy array directly, use Facenet (faster), and opencv detector (fastest)
+            # Run Face Recognition with ArcFace (Most accurate model)
+            # ArcFace: 99.8% accuracy, 512-dim embeddings, better with angles/lighting
             dfs = DeepFace.find(img_path=img,
                                 db_path=FACES_DB_PATH,
-                                model_name="VGG-Face",
+                                model_name="ArcFace",
                                 detector_backend="opencv",
                                 enforce_detection=False,
                                 silent=True)
@@ -149,10 +181,10 @@ def process_frame(img, source="manual"):
                         os.path.dirname(identity_path))
                     distance = match['distance']
 
-                    # STRICTER THRESHOLD for VGG-Face (Default is ~0.40, we want 0.30)
-                    if distance > 0.30:
+                    # ArcFace threshold (0.40 = balanced, lower = stricter)
+                    if distance > 0.40:
                         print(
-                            f"DEBUG: Match found but distance {distance} > 0.30 (Too weak). Treating as Unknown.")
+                            f"DEBUG: Match found but distance {distance} > 0.40 (Too weak). Treating as Unknown.")
                         detected_name = "Unknown"
                         confidence = 0.0
                     else:
@@ -160,7 +192,7 @@ def process_frame(img, source="manual"):
                             os.path.dirname(identity_path))
                         confidence = max(0, (1 - distance) * 100)
                         print(
-                            f"DEBUG: Match found: {detected_name}, Distance: {distance}")
+                            f"DEBUG: ArcFace Match: {detected_name}, Distance: {distance}, Confidence: {confidence:.1f}%")
                 else:
                     print("DEBUG: DeepFace returned empty dataframe (No match found)")
             else:
@@ -226,10 +258,17 @@ def process_frame(img, source="manual"):
             alert_ref.set(alert_data)
             print(f"Alert logged with Image URL: {image_url}")
 
+        # Save debug image with proper naming
+        if save_debug and debug_path:
+            face_path = debug_path.replace("frame_", f"FACE_{detected_name}_")
+            cv2.imwrite(face_path, img)
+            print(f"🔍 DEBUG: Saved FACE frame to {face_path}")
+
         return {
             "status": "alerted",
             "name": detected_name,
-            "message": f"Detected {detected_name} (Alert Sent)"
+            "message": f"Detected {detected_name} (Alert Sent)",
+            "face_detected": face_detected
         }
 
     except Exception as e:
@@ -291,8 +330,18 @@ def detect_person():
         print("Error: Failed to decode image (Corrupt JPEG)")
         return jsonify({"error": "Failed to decode image"}), 400
 
-    # Process the pushed frame
-    result = process_frame(img, source="stream")
+    # DEBUG: Prepare debug path
+    debug_dir = "debug_frames"
+    if not os.path.exists(debug_dir):
+        os.makedirs(debug_dir)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    debug_path = os.path.join(debug_dir, f"frame_{timestamp}.jpg")
+    print(f"🔍 DEBUG: Processing frame (Size: {img.shape})")
+
+    # Process the pushed frame (debug saving disabled)
+    result = process_frame(img, source="stream",
+                           save_debug=False, debug_path=debug_path)
 
     # Update global frame for streaming (so dashboard still sees something)
     global latest_frame
@@ -331,7 +380,7 @@ def control_robot():
                 esp32_params['led'] = servo_state['led']
 
             response = requests.get(
-                f"http://192.168.43.223/control", params=esp32_params, timeout=2)
+                f"http://{ESP32_IP}/control", params=esp32_params, timeout=ESP32_TIMEOUT)
             print(f"ESP32 Response: {response.status_code} - {response.text}")
         except Exception as e:
             print(f"Failed to forward command to ESP32: {e}")

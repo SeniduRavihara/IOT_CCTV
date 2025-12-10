@@ -12,13 +12,25 @@ import { useEffect, useRef, useState } from "react";
 function LiveCameraCard({ camera }: { camera: Camera }) {
   const [isOnline, setIsOnline] = useState(true);
   const [imgError, setImgError] = useState(false);
+  const [streamPaused, setStreamPaused] = useState(false);
 
-  // For the simulator demo, we force it to localhost:5000
-  // In a real deployment, this would be `http://${camera.ipAddress}/stream`
-  const streamUrl = "http://localhost:5001/video_feed";
+  // Direct ESP32 stream for minimal latency
+  // Fallback to known IP if camera.ipAddress is not set
+  const esp32IP = camera.ipAddress || "192.168.43.223";
+  const streamUrl = `http://${esp32IP}/stream`;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const toggleStream = async (enable: boolean) => {
+    try {
+      await fetch(`http://${esp32IP}/stream_control?enable=${enable ? 1 : 0}`);
+      setStreamPaused(!enable);
+      console.log(`Stream ${enable ? "enabled" : "disabled"} on ESP32`);
+    } catch (error) {
+      console.error("Failed to control stream:", error);
+    }
+  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -35,7 +47,8 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
       setIsFullscreen(!!document.fullscreenElement);
     };
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () =>
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   return (
@@ -65,8 +78,40 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
       </div>
 
       {/* Camera Feed */}
-      <div ref={containerRef} className="relative aspect-video bg-slate-900 group">
-        {!imgError ? (
+      <div
+        ref={containerRef}
+        className="relative aspect-video bg-slate-900 group"
+      >
+        {streamPaused ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+            <div className="text-center">
+              <Video className="h-16 w-16 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400 mb-2">Stream Paused</p>
+              <p className="text-xs text-slate-500 mb-4">
+                ESP32 is now free - servo controls work instantly
+              </p>
+              <button
+                onClick={() => toggleStream(true)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
+              >
+                Resume Stream
+              </button>
+            </div>
+          </div>
+        ) : imgError ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <WifiOff className="h-16 w-16 text-slate-600 mx-auto mb-4" />
+              <p className="text-slate-400">Camera offline</p>
+              <button
+                onClick={() => setImgError(false)}
+                className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline"
+              >
+                Retry Connection
+              </button>
+            </div>
+          </div>
+        ) : (
           <img
             src={streamUrl}
             alt={`Live feed from ${camera.name}`}
@@ -80,19 +125,6 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
               setImgError(false);
             }}
           />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <WifiOff className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400">Camera offline</p>
-              <button
-                onClick={() => setImgError(false)}
-                className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline"
-              >
-                Retry Connection
-              </button>
-            </div>
-          </div>
         )}
 
         {/* Recording Indicator */}
@@ -103,8 +135,18 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
           </div>
         )}
 
+        {/* Pause Stream Button (Top Left) */}
+        {isOnline && !streamPaused && (
+          <button
+            onClick={() => toggleStream(false)}
+            className="absolute top-4 left-4 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          >
+            Pause for Control
+          </button>
+        )}
+
         {/* Fullscreen Toggle */}
-        {isOnline && (
+        {isOnline && !streamPaused && (
           <button
             onClick={toggleFullscreen}
             className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -118,12 +160,16 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
         )}
 
         {/* Robot Control Overlay (Visible in Fullscreen or Normal) */}
-        {isOnline && (
-            <div className={`absolute bottom-4 left-4 transition-opacity duration-300 ${isFullscreen ? 'opacity-0 group-hover:opacity-100' : ''}`}>
-                <div className="bg-black/40 backdrop-blur-sm p-2 rounded-2xl border border-white/10 scale-75 origin-bottom-left">
-                    <RobotControl />
-                </div>
+        {isOnline && !streamPaused && (
+          <div
+            className={`absolute bottom-4 left-4 transition-opacity duration-300 ${
+              isFullscreen ? "opacity-0 group-hover:opacity-100" : ""
+            }`}
+          >
+            <div className="bg-black/40 backdrop-blur-sm p-2 rounded-2xl border border-white/10 scale-75 origin-bottom-left">
+              <RobotControl />
             </div>
+          </div>
         )}
       </div>
 
@@ -222,4 +268,3 @@ export default function LivePage() {
     </div>
   );
 }
-

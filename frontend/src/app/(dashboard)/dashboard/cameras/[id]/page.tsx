@@ -7,7 +7,14 @@ import { Input } from "@/components/ui/Input";
 import { db } from "@/lib/firebase/config";
 import { Camera } from "@/lib/types";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
-import { AlertTriangle, ArrowLeft, Save, Video, Wifi, WifiOff } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Save,
+  Video,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -47,7 +54,7 @@ export default function CameraDetailPage() {
         setCamera(cameraData);
         // Initialize local online state from DB, but it will update on stream load
         setIsOnline(cameraData.status === "online");
-        
+
         setFormData({
           name: cameraData.name,
           location: cameraData.location,
@@ -183,12 +190,14 @@ export default function CameraDetailPage() {
               </button>
             </div>
           )}
-          
+
           {/* Fallback for load error (handled via CSS class in real app, simplified here) */}
           <div className="hidden stream-error-msg absolute inset-0 flex flex-col items-center justify-center bg-slate-900">
-             <AlertTriangle className="h-12 w-12 text-yellow-500 mb-2" />
-             <p className="text-slate-400">Stream unavailable</p>
-             <p className="text-xs text-slate-600 mt-1">Check IP: {camera.ipAddress}</p>
+            <AlertTriangle className="h-12 w-12 text-yellow-500 mb-2" />
+            <p className="text-slate-400">Stream unavailable</p>
+            <p className="text-xs text-slate-600 mt-1">
+              Check IP: {camera.ipAddress}
+            </p>
           </div>
         </div>
       </Card>
@@ -332,4 +341,3 @@ export default function CameraDetailPage() {
     </div>
   );
 }
-
