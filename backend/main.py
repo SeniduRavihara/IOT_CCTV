@@ -138,30 +138,47 @@ def process_frame(img, source="manual", save_debug=False, debug_path=None):
         confidence = 0.0
         face_detected = False
 
-        # Pre-check: Detect if face exists before heavy recognition
-        face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        # Use DeepFace's better detector (RetinaFace) for pre-check
+        # This eliminates false positives like ceilings, walls, etc.
+        try:
+            from deepface.modules import detection
+            face_objs = detection.extract_faces(
+                img_path=img,
+                detector_backend="retinaface",
+                enforce_detection=False,
+                align=True
+            )
 
-        if len(faces) == 0:
-            print("DEBUG: No face detected in frame, skipping recognition")
+            # Filter faces by confidence (>70% confidence to be a real face)
+            valid_faces = [f for f in face_objs if f.get(
+                "confidence", 0) > 0.7]
 
-            # Save debug image as "no_face"
-            if save_debug and debug_path:
-                no_face_path = debug_path.replace("frame_", "NO_FACE_")
-                cv2.imwrite(no_face_path, img)
-                print(f"🔍 DEBUG: Saved NO FACE frame to {no_face_path}")
+            if len(valid_faces) == 0:
+                print(
+                    "📹 Motion detected - No valid face found (confidence too low or not a face)")
 
-            return {
-                "status": "success",
-                "name": "Unknown",
-                "message": "No face detected in frame",
-                "face_detected": False
-            }
+                # Save debug image as "no_face"
+                if save_debug and debug_path:
+                    no_face_path = debug_path.replace("frame_", "NO_FACE_")
+                    cv2.imwrite(no_face_path, img)
+                    print(f"🔍 DEBUG: Saved NO FACE frame to {no_face_path}")
 
-        face_detected = True
-        print(f"DEBUG: Face detected, running recognition...")
+                return {
+                    "status": "success",
+                    "name": "Unknown",
+                    "message": "No face detected in frame",
+                    "face_detected": False
+                }
+
+            face_detected = True
+            max_confidence = max([f.get("confidence", 0) for f in valid_faces])
+            print(
+                f"👤 Face detected in frame (confidence: {max_confidence*100:.1f}%) - Running AI recognition...")
+
+        except Exception as e:
+            print(
+                f"⚠️  Face detection pre-check failed: {e} - Proceeding with recognition anyway")
+            face_detected = True
 
         try:
             # Run Face Recognition with ArcFace (Most accurate model)
@@ -184,7 +201,7 @@ def process_frame(img, source="manual", save_debug=False, debug_path=None):
                     # ArcFace threshold (0.40 = balanced, lower = stricter)
                     if distance > 0.40:
                         print(
-                            f"DEBUG: Match found but distance {distance} > 0.40 (Too weak). Treating as Unknown.")
+                            f"⚠️  Match found but confidence too low (distance: {distance:.3f} > 0.40) - Treating as Unknown")
                         detected_name = "Unknown"
                         confidence = 0.0
                     else:
@@ -192,11 +209,11 @@ def process_frame(img, source="manual", save_debug=False, debug_path=None):
                             os.path.dirname(identity_path))
                         confidence = max(0, (1 - distance) * 100)
                         print(
-                            f"DEBUG: ArcFace Match: {detected_name}, Distance: {distance}, Confidence: {confidence:.1f}%")
+                            f"✅ Face recognized: {detected_name} (Confidence: {confidence:.1f}%, Distance: {distance:.3f})")
                 else:
-                    print("DEBUG: DeepFace returned empty dataframe (No match found)")
+                    print("❌ No matching face found in database")
             else:
-                print("DEBUG: DeepFace returned no results list")
+                print("❌ Face detection failed - No results from AI model")
 
         except Exception as e:
             print(f"DeepFace find error: {e}")
@@ -272,8 +289,15 @@ def process_frame(img, source="manual", save_debug=False, debug_path=None):
         }
 
     except Exception as e:
-        print(f"Error in detection: {e}")
-        return {"error": str(e)}
+        print(f"❌ Critical error in face detection: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "error": str(e),
+            "status": "error",
+            "name": "Unknown",
+            "message": "Detection failed - system continuing"
+        }
 
 
 @app.route('/register', methods=['POST'])
@@ -317,41 +341,62 @@ def register_face():
 
 @app.route('/detect', methods=['POST'])
 def detect_person():
-    if 'image' not in request.files:
+    # Accept both multipart form data AND raw JPEG bytes
+    if 'image' in request.files:
+        # Multipart form data (from web upload)
+        file = request.files['image']
+        npimg = np.frombuffer(file.read(), np.uint8)
+    elif request.content_type and 'image/jpeg' in request.content_type:
+        # Raw JPEG bytes (from ESP32)
+        npimg = np.frombuffer(request.data, np.uint8)
+        print(
+            f"📡 Raw JPEG received from ESP32 ({len(request.data)/1024:.1f} KB)")
+    else:
+        print(f"❌ Invalid request - Content-Type: {request.content_type}")
         return jsonify({"error": "No image provided"}), 400
 
-    file = request.files['image']
-
     # Convert to numpy array for OpenCV/DeepFace
-    npimg = np.frombuffer(file.read(), np.uint8)
     img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
     if img is None:
-        print("Error: Failed to decode image (Corrupt JPEG)")
+        print("❌ Failed to decode image (Corrupt JPEG)")
         return jsonify({"error": "Failed to decode image"}), 400
 
-    # DEBUG: Prepare debug path
-    debug_dir = "debug_frames"
-    if not os.path.exists(debug_dir):
-        os.makedirs(debug_dir)
+    try:
+        # DEBUG: Prepare debug path
+        debug_dir = "debug_frames"
+        if not os.path.exists(debug_dir):
+            os.makedirs(debug_dir)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    debug_path = os.path.join(debug_dir, f"frame_{timestamp}.jpg")
-    print(f"🔍 DEBUG: Processing frame (Size: {img.shape})")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        debug_path = os.path.join(debug_dir, f"frame_{timestamp}.jpg")
+        print(
+            f"📸 Frame received from ESP32 (Size: {img.shape[1]}x{img.shape[0]}, {len(npimg)/1024:.1f} KB)")
 
-    # Process the pushed frame (debug saving disabled)
-    result = process_frame(img, source="stream",
-                           save_debug=False, debug_path=debug_path)
+        # Process the pushed frame (debug saving disabled)
+        result = process_frame(img, source="stream",
+                               save_debug=False, debug_path=debug_path)
 
-    # Update global frame for streaming (so dashboard still sees something)
-    global latest_frame
-    with lock:
-        latest_frame = img.copy()
+        # Update global frame for streaming (so dashboard still sees something)
+        global latest_frame
+        with lock:
+            latest_frame = img.copy()
 
-    # Add servo commands to response
-    result["servo_cmd"] = servo_state
+        # Add servo commands to response
+        result["servo_cmd"] = servo_state
 
-    return jsonify(result)
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ Error processing frame: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return success anyway to prevent ESP32 retries
+        return jsonify({
+            "status": "error",
+            "message": "Frame processing failed but received",
+            "error": str(e)
+        })
 
 
 @app.route('/control', methods=['POST'])
@@ -439,4 +484,17 @@ def video_feed():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5001))
-    app.run(host='0.0.0.0', port=port, debug=True)
+
+    print("\n" + "="*60)
+    print("🚀 IOT CCTV Backend Server Starting")
+    print("="*60)
+    print(f"📡 Server: http://0.0.0.0:{port}")
+    print(f"🔍 Detect endpoint: http://0.0.0.0:{port}/detect")
+    print(f"📹 Known faces: {FACES_DB_PATH}")
+    print(f"🔥 Firebase connected: {db is not None}")
+    print("="*60)
+    print("✅ Production-ready with error recovery and retry logic")
+    print("="*60 + "\n")
+
+    # Disable debug mode for production stability
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

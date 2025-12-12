@@ -10,27 +10,18 @@ import { Maximize2, Minimize2, Video, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 function LiveCameraCard({ camera }: { camera: Camera }) {
-  const [isOnline, setIsOnline] = useState(true);
-  const [imgError, setImgError] = useState(false);
-  const [streamPaused, setStreamPaused] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false); // Start with AI OFF
+  const [autoConnect, setAutoConnect] = useState(true); // Auto-connect by default
+  const imgRef = useRef<HTMLImageElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  // Direct ESP32 stream for minimal latency
-  // Fallback to known IP if camera.ipAddress is not set
+  // WebSocket stream for real-time control
   const esp32IP = camera.ipAddress || "192.168.43.223";
-  const streamUrl = `http://${esp32IP}/stream`;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  const toggleStream = async (enable: boolean) => {
-    try {
-      await fetch(`http://${esp32IP}/stream_control?enable=${enable ? 1 : 0}`);
-      setStreamPaused(!enable);
-      console.log(`Stream ${enable ? "enabled" : "disabled"} on ESP32`);
-    } catch (error) {
-      console.error("Failed to control stream:", error);
-    }
-  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -41,6 +32,170 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
       setIsFullscreen(false);
     }
   };
+
+  const toggleAi = () => {
+    const newAiState = !aiEnabled;
+    setAiEnabled(newAiState);
+
+    if (wsRef?.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(`ai:${newAiState ? 1 : 0}`);
+      console.log(`🤖 AI Detection ${newAiState ? "ENABLED" : "DISABLED"}`);
+    } else {
+      console.warn("WebSocket not connected - AI toggle failed");
+    }
+  };
+
+  const manualConnect = () => {
+    setAutoConnect(true);
+  };
+
+  const manualDisconnect = () => {
+    setAutoConnect(false);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setWsConnected(false);
+  };
+
+  // WebSocket connection effect with robust reconnection
+  useEffect(() => {
+    if (!autoConnect) return; // Only connect if autoConnect is true
+
+    let reconnectTimeout: NodeJS.Timeout;
+    let reconnectAttempts = 0;
+    let isComponentMounted = true;
+
+    const connectWebSocket = () => {
+      if (!isComponentMounted) return;
+
+      // Close existing connection if any
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch (e) {
+          console.log("Error closing old WebSocket:", e);
+        }
+        wsRef.current = null;
+      }
+
+      try {
+        console.log(
+          `🔌 Attempting WebSocket connection to ${esp32IP}:81 (attempt ${
+            reconnectAttempts + 1
+          })...`
+        );
+        const ws = new WebSocket(`ws://${esp32IP}:81`);
+        ws.binaryType = "arraybuffer";
+        wsRef.current = ws;
+
+        // Connection timeout - if not connected in 5 seconds, retry
+        const connectionTimeout = setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) {
+            console.warn("⏱️ Connection timeout - retrying...");
+            ws.close();
+          }
+        }, 5000);
+
+        ws.onopen = () => {
+          clearTimeout(connectionTimeout);
+          reconnectAttempts = 0; // Reset counter on success
+          console.log("✅ WebSocket connected to ESP32");
+          setWsConnected(true);
+          setIsOnline(true);
+        };
+
+        ws.onmessage = (event) => {
+          // Handle keepalive ping from ESP32
+          if (typeof event.data === "string" && event.data === "ping") {
+            ws.send("pong");
+            console.log("🔄 Keepalive: received ping, sent pong");
+            return;
+          }
+
+          if (event.data instanceof ArrayBuffer && event.data.byteLength > 0) {
+            // Binary frame - display as image
+            const blob = new Blob([event.data], { type: "image/jpeg" });
+            const url = URL.createObjectURL(blob);
+
+            if (imgRef.current) {
+              if (
+                imgRef.current.src &&
+                imgRef.current.src.startsWith("blob:")
+              ) {
+                URL.revokeObjectURL(imgRef.current.src);
+              }
+              imgRef.current.src = url;
+              imgRef.current.onload = () => {
+                if (url.startsWith("blob:")) {
+                  URL.revokeObjectURL(url);
+                }
+              };
+            }
+          }
+        };
+
+        ws.onerror = (error) => {
+          clearTimeout(connectionTimeout);
+          console.error("❌ WebSocket error:", error);
+          setIsOnline(false);
+          setWsConnected(false);
+        };
+
+        ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+
+          // Detailed close code diagnostics
+          const closeReasons: Record<number, string> = {
+            1000: "Normal closure",
+            1001: "Going away (page refresh/navigation)",
+            1006: "Abnormal closure (no close frame - network/crash)",
+            1008: "Policy violation",
+            1009: "Message too big",
+            1011: "Server error",
+          };
+
+          const reason = closeReasons[event.code] || event.reason || "Unknown";
+          console.log(`🔌 WebSocket closed - Code: ${event.code} (${reason})`);
+
+          setWsConnected(false);
+          setIsOnline(false);
+
+          // Exponential backoff: 1s, 2s, 4s, max 10s
+          reconnectAttempts++;
+          const delay = Math.min(
+            1000 * Math.pow(2, reconnectAttempts - 1),
+            10000
+          );
+
+          console.log(`🔄 Reconnecting in ${delay / 1000}s...`);
+          reconnectTimeout = setTimeout(connectWebSocket, delay);
+        };
+      } catch (error) {
+        console.error("❌ Failed to create WebSocket:", error);
+        setIsOnline(false);
+        setWsConnected(false);
+
+        reconnectAttempts++;
+        const delay = Math.min(
+          1000 * Math.pow(2, reconnectAttempts - 1),
+          10000
+        );
+        reconnectTimeout = setTimeout(connectWebSocket, delay);
+      }
+    };
+
+    connectWebSocket();
+
+    return () => {
+      isComponentMounted = false;
+      clearTimeout(reconnectTimeout);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [esp32IP, autoConnect]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -58,10 +213,10 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
         <div className="flex items-center gap-3">
           <div
             className={`p-2 rounded-lg ${
-              isOnline ? "bg-green-500/20" : "bg-red-500/20"
+              wsConnected ? "bg-green-500/20" : "bg-red-500/20"
             }`}
           >
-            {isOnline ? (
+            {wsConnected ? (
               <Wifi className="h-5 w-5 text-green-400" />
             ) : (
               <WifiOff className="h-5 w-5 text-red-400" />
@@ -72,9 +227,35 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
             <p className="text-xs text-slate-400">{camera.location}</p>
           </div>
         </div>
-        <Badge variant={isOnline ? "success" : "danger"}>
-          {isOnline ? "Online" : "Offline"}
-        </Badge>
+        <div className="flex items-center gap-3">
+          {/* Connect/Disconnect Button */}
+          <button
+            onClick={wsConnected ? manualDisconnect : manualConnect}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              wsConnected
+                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+            }`}
+          >
+            {wsConnected ? "🔌 Disconnect" : "🔌 Connect"}
+          </button>
+
+          {/* AI Detection Toggle - Always visible */}
+          <button
+            onClick={toggleAi}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              aiEnabled
+                ? "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                : "bg-slate-700/50 text-slate-400 hover:bg-slate-700/70"
+            }`}
+            title={aiEnabled ? "Disable AI Detection" : "Enable AI Detection"}
+          >
+            🤖 AI {aiEnabled ? "ON" : "OFF"}
+          </button>
+          <Badge variant={wsConnected ? "success" : "danger"}>
+            {wsConnected ? "Online" : "Offline"}
+          </Badge>
+        </div>
       </div>
 
       {/* Camera Feed */}
@@ -82,71 +263,56 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
         ref={containerRef}
         className="relative aspect-video bg-slate-900 group"
       >
-        {streamPaused ? (
+        {!wsConnected ? (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
             <div className="text-center">
-              <Video className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400 mb-2">Stream Paused</p>
-              <p className="text-xs text-slate-500 mb-4">
-                ESP32 is now free - servo controls work instantly
+              <div className="relative inline-block mb-4">
+                <WifiOff className="h-16 w-16 text-slate-600 mx-auto" />
+                <div className="absolute -top-1 -right-1 h-3 w-3 bg-yellow-500 rounded-full animate-pulse"></div>
+              </div>
+              <p className="text-slate-400 font-medium">
+                Connecting to camera...
               </p>
-              <button
-                onClick={() => toggleStream(true)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium"
-              >
-                Resume Stream
-              </button>
-            </div>
-          </div>
-        ) : imgError ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <WifiOff className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400">Camera offline</p>
-              <button
-                onClick={() => setImgError(false)}
-                className="mt-4 text-xs text-blue-400 hover:text-blue-300 underline"
-              >
-                Retry Connection
-              </button>
+              <p className="text-xs text-slate-500 mt-2">
+                ESP32 @ {esp32IP}:81
+              </p>
+              <div className="mt-4 flex items-center justify-center gap-1">
+                <div
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0ms" }}
+                ></div>
+                <div
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                ></div>
+                <div
+                  className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                ></div>
+              </div>
+              <p className="text-xs text-slate-600 mt-3">
+                Auto-reconnecting with exponential backoff
+              </p>
             </div>
           </div>
         ) : (
           <img
-            src={streamUrl}
+            ref={imgRef}
             alt={`Live feed from ${camera.name}`}
-            className="w-full h-full object-contain"
-            onError={() => {
-              setImgError(true);
-              setIsOnline(false);
-            }}
-            onLoad={() => {
-              setIsOnline(true);
-              setImgError(false);
-            }}
+            className="w-full h-full object-contain bg-black"
           />
         )}
 
         {/* Recording Indicator */}
-        {isOnline && (
+        {wsConnected && (
           <div className="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-red-500 rounded-full">
             <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
             <span className="text-xs font-semibold text-white">LIVE</span>
           </div>
         )}
 
-        {/* Pause Stream Button (Top Left) */}
-        {isOnline && !streamPaused && (
-          <button
-            onClick={() => toggleStream(false)}
-            className="absolute top-4 left-4 px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity z-10"
-          >
-            Pause for Control
-          </button>
-        )}
-
         {/* Fullscreen Toggle */}
-        {isOnline && !streamPaused && (
+        {wsConnected && (
           <button
             onClick={toggleFullscreen}
             className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity z-10"
@@ -159,15 +325,15 @@ function LiveCameraCard({ camera }: { camera: Camera }) {
           </button>
         )}
 
-        {/* Robot Control Overlay (Visible in Fullscreen or Normal) */}
-        {isOnline && !streamPaused && (
+        {/* Robot Control Overlay (Always available - no pause needed!) */}
+        {wsConnected && (
           <div
             className={`absolute bottom-4 left-4 transition-opacity duration-300 ${
               isFullscreen ? "opacity-0 group-hover:opacity-100" : ""
             }`}
           >
             <div className="bg-black/40 backdrop-blur-sm p-2 rounded-2xl border border-white/10 scale-75 origin-bottom-left">
-              <RobotControl />
+              <RobotControl wsRef={wsRef} />
             </div>
           </div>
         )}

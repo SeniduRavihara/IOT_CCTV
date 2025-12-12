@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32-CAM WebSocket Live Control</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 1200px;
+        width: 100%;
+        overflow: hidden;
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 30px;
+        text-align: center;
+        color: white;
+      }
+
+      .header h1 {
+        font-size: 2rem;
+        margin-bottom: 10px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+      }
+
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #10b981;
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .content {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+        padding: 30px;
+      }
+
+      .video-container {
+        background: #000;
+        border-radius: 15px;
+        overflow: hidden;
+        position: relative;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+
+      #videoFrame {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .video-overlay {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .controls-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+
+      .control-section {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 15px;
+      }
+
+      .control-section h3 {
+        margin-bottom: 15px;
+        color: #333;
+        font-size: 1.1rem;
+      }
+
+      .servo-controls {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      .control-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 1.2rem;
+        transition: transform 0.1s, box-shadow 0.3s;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      .control-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+      }
+
+      .control-btn:active {
+        transform: translateY(0);
+      }
+
+      .slider-container {
+        margin: 15px 0;
+      }
+
+      .slider-container label {
+        display: block;
+        margin-bottom: 8px;
+        color: #555;
+        font-weight: 500;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        height: 8px;
+        border-radius: 5px;
+        background: #ddd;
+        outline: none;
+        -webkit-appearance: none;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #667eea;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #667eea;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.5);
+      }
+
+      .value-display {
+        text-align: center;
+        color: #667eea;
+        font-weight: bold;
+        font-size: 1.2rem;
+        margin-top: 5px;
+      }
+
+      .led-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 15px;
+        background: white;
+        border-radius: 10px;
+        margin-top: 15px;
+      }
+
+      .led-toggle label {
+        font-weight: 500;
+        color: #333;
+      }
+
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+        height: 34px;
+      }
+
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: 0.4s;
+        border-radius: 34px;
+      }
+
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 26px;
+        width: 26px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: 0.4s;
+        border-radius: 50%;
+      }
+
+      input:checked + .slider {
+        background-color: #667eea;
+      }
+
+      input:checked + .slider:before {
+        transform: translateX(26px);
+      }
+
+      .fps-counter {
+        text-align: center;
+        color: #888;
+        font-size: 0.9rem;
+        margin-top: 10px;
+      }
+
+      @media (max-width: 768px) {
+        .content {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🤖 ESP32-CAM WebSocket Control</h1>
+        <div class="status">
+          <span class="status-dot"></span>
+          <span id="connectionStatus">Connecting...</span>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Video Stream -->
+        <div class="video-container">
+          <img id="videoFrame" src="" alt="Camera Stream" />
+          <div class="video-overlay">
+            <span>📹</span>
+            <span>Live Stream</span>
+          </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-panel">
+          <!-- Servo Controls -->
+          <div class="control-section">
+            <h3>🎮 Servo Control</h3>
+
+            <!-- Directional Buttons -->
+            <div class="servo-controls">
+              <div></div>
+              <button
+                class="control-btn"
+                onclick="sendCommand('tilt:' + (parseInt(document.getElementById('tiltSlider').value) + 10))"
+              >
+                ⬆️
+              </button>
+              <div></div>
+              <button
+                class="control-btn"
+                onclick="sendCommand('pan:' + (parseInt(document.getElementById('panSlider').value) - 10))"
+              >
+                ⬅️
+              </button>
+              <button class="control-btn" onclick="centerServos()">🎯</button>
+              <button
+                class="control-btn"
+                onclick="sendCommand('pan:' + (parseInt(document.getElementById('panSlider').value) + 10))"
+              >
+                ➡️
+              </button>
+              <div></div>
+              <button
+                class="control-btn"
+                onclick="sendCommand('tilt:' + (parseInt(document.getElementById('tiltSlider').value) - 10))"
+              >
+                ⬇️
+              </button>
+              <div></div>
+            </div>
+
+            <!-- Pan Slider -->
+            <div class="slider-container">
+              <label for="panSlider">Pan (Horizontal)</label>
+              <input
+                type="range"
+                id="panSlider"
+                min="0"
+                max="180"
+                value="90"
+                oninput="updateServo('pan', this.value)"
+              />
+              <div class="value-display" id="panValue">90°</div>
+            </div>
+
+            <!-- Tilt Slider -->
+            <div class="slider-container">
+              <label for="tiltSlider">Tilt (Vertical)</label>
+              <input
+                type="range"
+                id="tiltSlider"
+                min="0"
+                max="180"
+                value="90"
+                oninput="updateServo('tilt', this.value)"
+              />
+              <div class="value-display" id="tiltValue">90°</div>
+            </div>
+
+            <!-- LED Toggle -->
+            <div class="led-toggle">
+              <label>💡 Flash LED</label>
+              <label class="switch">
+                <input
+                  type="checkbox"
+                  id="ledToggle"
+                  onchange="toggleLED(this.checked)"
+                />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Connection Info -->
+          <div class="control-section">
+            <h3>📊 Connection Info</h3>
+            <div style="font-size: 0.9rem; color: #666; line-height: 1.8">
+              <div><strong>ESP32 IP:</strong> <span id="esp32IP">-</span></div>
+              <div>
+                <strong>WebSocket:</strong>
+                <span id="wsStatus">Disconnected</span>
+              </div>
+              <div class="fps-counter">
+                <strong>FPS:</strong> <span id="fpsCounter">0</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Configuration
+      const ESP32_IP = "192.168.43.223"; // Change to your ESP32 IP
+      const WS_PORT = 81;
+
+      let ws;
+      let lastFrameTime = 0;
+      let frameCount = 0;
+      let fpsInterval;
+
+      // Update UI with ESP32 IP
+      document.getElementById("esp32IP").textContent = ESP32_IP;
+
+      // Connect to WebSocket
+      function connectWebSocket() {
+        ws = new WebSocket(`ws://${ESP32_IP}:${WS_PORT}`);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          console.log("✅ WebSocket Connected");
+          document.getElementById("connectionStatus").textContent = "Connected";
+          document.getElementById("wsStatus").textContent = "Connected";
+          document.getElementById("wsStatus").style.color = "#10b981";
+          startFPSCounter();
+        };
+
+        ws.onclose = () => {
+          console.log("❌ WebSocket Disconnected");
+          document.getElementById("connectionStatus").textContent =
+            "Disconnected - Reconnecting...";
+          document.getElementById("wsStatus").textContent = "Disconnected";
+          document.getElementById("wsStatus").style.color = "#ef4444";
+          stopFPSCounter();
+
+          // Attempt reconnection after 2 seconds
+          setTimeout(connectWebSocket, 2000);
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket Error:", error);
+        };
+
+        ws.onmessage = (event) => {
+          // Receive binary video frame
+          const blob = new Blob([event.data], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+
+          const img = document.getElementById("videoFrame");
+          const oldUrl = img.src;
+          img.src = url;
+
+          // Clean up old blob URL
+          if (oldUrl && oldUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(oldUrl);
+          }
+
+          // Update FPS counter
+          frameCount++;
+        };
+      }
+
+      // Send control command to ESP32
+      function sendCommand(command) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(command);
+          console.log("📤 Sent:", command);
+        } else {
+          console.error("WebSocket not connected");
+        }
+      }
+
+      // Update servo via slider
+      function updateServo(type, value) {
+        value = parseInt(value);
+
+        if (type === "pan") {
+          document.getElementById("panValue").textContent = value + "°";
+          document.getElementById("panSlider").value = value;
+        } else if (type === "tilt") {
+          document.getElementById("tiltValue").textContent = value + "°";
+          document.getElementById("tiltSlider").value = value;
+        }
+
+        sendCommand(`${type}:${value}`);
+      }
+
+      // Center servos
+      function centerServos() {
+        updateServo("pan", 90);
+        updateServo("tilt", 90);
+      }
+
+      // Toggle LED
+      function toggleLED(state) {
+        sendCommand(`led:${state ? 1 : 0}`);
+      }
+
+      // FPS Counter
+      function startFPSCounter() {
+        frameCount = 0;
+        fpsInterval = setInterval(() => {
+          document.getElementById("fpsCounter").textContent = frameCount;
+          frameCount = 0;
+        }, 1000);
+      }
+
+      function stopFPSCounter() {
+        if (fpsInterval) {
+          clearInterval(fpsInterval);
+          document.getElementById("fpsCounter").textContent = "0";
+        }
+      }
+
+      // Keyboard controls (WASD)
+      document.addEventListener("keydown", (e) => {
+        const panSlider = document.getElementById("panSlider");
+        const tiltSlider = document.getElementById("tiltSlider");
+
+        switch (e.key.toLowerCase()) {
+          case "w": // Up
+            updateServo("tilt", Math.min(180, parseInt(tiltSlider.value) + 5));
+            break;
+          case "s": // Down
+            updateServo("tilt", Math.max(0, parseInt(tiltSlider.value) - 5));
+            break;
+          case "a": // Left
+            updateServo("pan", Math.max(0, parseInt(panSlider.value) - 5));
+            break;
+          case "d": // Right
+            updateServo("pan", Math.min(180, parseInt(panSlider.value) + 5));
+            break;
+          case "c": // Center
+            centerServos();
+            break;
+          case "l": // Toggle LED
+            const ledToggle = document.getElementById("ledToggle");
+            ledToggle.checked = !ledToggle.checked;
+            toggleLED(ledToggle.checked);
+            break;
+        }
+      });
+
+      // Initialize connection
+      connectWebSocket();
+    </script>
+  </body>
+</html>
